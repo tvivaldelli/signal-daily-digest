@@ -12,26 +12,55 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "Run Node.js"
+args = "Backend Server"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Frontend App"
 
 [[workflows.workflow]]
-name = "Run Node.js"
+name = "Backend Server"
 author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "node index.js"
+args = "cd server && npm start"
+waitForPort = 3001
 
 [workflows.workflow.metadata]
 outputType = "console"
+
+[[workflows.workflow]]
+name = "Frontend App"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd client && npm run dev"
+waitForPort = 5000
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[ports]]
+localPort = 3001
+externalPort = 3001
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[[ports]]
+localPort = 5001
+externalPort = 3000
 
 [[ports]]
 localPort = 5173
 externalPort = 80
 
 [[ports]]
-localPort = 3001
-externalPort = 3001
+localPort = 42493
+externalPort = 3002
 
 [deployment]
 run = ["sh", "-c", "cd client && npm run dev"]
