@@ -1,0 +1,12 @@
+{
+  "name": "nodejs-blank-repl",
+  "version": "1.0.0",
+  "description": "A blank Node.js project",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
