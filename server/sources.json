@@ -6,19 +6,19 @@
       "rss": "https://www.housingwire.com/feed/"
     },
     {
-      "name": "National Mortgage News",
-      "url": "https://www.nationalmortgagenews.com/",
-      "rss": "https://www.nationalmortgagenews.com/feed"
+      "name": "Bankrate Mortgage News",
+      "url": "https://www.bankrate.com/",
+      "rss": "https://www.bankrate.com/mortgages/feeds/latest-mortgage-news/"
     },
     {
-      "name": "Mortgage News Daily",
-      "url": "https://www.mortgagenewsdaily.com/",
-      "rss": "https://www.mortgagenewsdaily.com/rss/latest-news"
+      "name": "Redfin News",
+      "url": "https://www.redfin.com/news",
+      "rss": "https://www.redfin.com/news/feed/"
     },
     {
-      "name": "FinTech Magazine",
-      "url": "https://fintechmagazine.com/",
-      "rss": "https://fintechmagazine.com/feed"
+      "name": "Real Estate News",
+      "url": "https://www.realtor.com/",
+      "rss": "https://www.realtor.com/news/rss/"
     }
   ]
 }
