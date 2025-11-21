@@ -37,15 +37,18 @@ async function fetchRSS(source) {
         // Extract content
         const content = item['content:encoded'] || item.description || item.summary || '';
 
-        // Generate summary using Claude
-        const summary = await summarizeArticle(item.title, content);
+        // Use quick summary from content (no Claude to avoid timeouts)
+        const quickSummary = content
+          .replace(/<[^>]*>/g, '') // Remove HTML tags
+          .substring(0, 300)
+          .trim() + '...';
 
         const article = {
           title: item.title,
           link: item.link,
           pubDate: item.pubDate || item.isoDate || new Date().toISOString(),
           source: source.name,
-          summary: summary,
+          summary: quickSummary,
           originalContent: content.substring(0, 500) // Store first 500 chars
         };
 
