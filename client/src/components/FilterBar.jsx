@@ -2,22 +2,34 @@ import { useState, useEffect } from 'react';
 import { getSources } from '../services/api';
 import './FilterBar.css';
 
-export default function FilterBar({ onFilterChange, onRefresh, isRefreshing }) {
+export default function FilterBar({ onFilterChange, onRefresh, isRefreshing, selectedCategory }) {
   const [sources, setSources] = useState([]);
+  const [allSources, setAllSources] = useState([]);
   const [filters, setFilters] = useState({
     source: '',
-    keyword: '',
-    startDate: '',
-    endDate: ''
+    keyword: ''
   });
 
   useEffect(() => {
     loadSources();
   }, []);
 
+  useEffect(() => {
+    // Filter sources based on selected category
+    if (selectedCategory && selectedCategory !== 'all') {
+      const filtered = allSources.filter(s => s.category === selectedCategory);
+      setSources(filtered);
+    } else {
+      setSources(allSources);
+    }
+    // Clear source filter when category changes
+    handleFilterChange('source', '');
+  }, [selectedCategory, allSources]);
+
   async function loadSources() {
     try {
       const sourcesData = await getSources();
+      setAllSources(sourcesData);
       setSources(sourcesData);
     } catch (error) {
       console.error('Failed to load sources:', error);
@@ -33,9 +45,7 @@ export default function FilterBar({ onFilterChange, onRefresh, isRefreshing }) {
   function handleClearFilters() {
     const clearedFilters = {
       source: '',
-      keyword: '',
-      startDate: '',
-      endDate: ''
+      keyword: ''
     };
     setFilters(clearedFilters);
     onFilterChange(clearedFilters);
@@ -69,28 +79,6 @@ export default function FilterBar({ onFilterChange, onRefresh, isRefreshing }) {
             placeholder="Search articles..."
             value={filters.keyword}
             onChange={(e) => handleFilterChange('keyword', e.target.value)}
-            className="filter-input"
-          />
-        </div>
-
-        <div className="filter-group">
-          <label htmlFor="start-date-filter">Start Date</label>
-          <input
-            id="start-date-filter"
-            type="date"
-            value={filters.startDate}
-            onChange={(e) => handleFilterChange('startDate', e.target.value)}
-            className="filter-input"
-          />
-        </div>
-
-        <div className="filter-group">
-          <label htmlFor="end-date-filter">End Date</label>
-          <input
-            id="end-date-filter"
-            type="date"
-            value={filters.endDate}
-            onChange={(e) => handleFilterChange('endDate', e.target.value)}
             className="filter-input"
           />
         </div>

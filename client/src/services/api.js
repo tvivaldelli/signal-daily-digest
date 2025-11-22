@@ -12,13 +12,14 @@ const api = axios.create({
 
 /**
  * Fetch articles with optional filters
- * @param {Object} filters - { source, startDate, endDate, keyword }
+ * @param {Object} filters - { category, source, startDate, endDate, keyword }
  * @returns {Promise<Array>} - Array of articles
  */
 export async function getArticles(filters = {}) {
   try {
     const params = new URLSearchParams();
 
+    if (filters.category) params.append('category', filters.category);
     if (filters.source) params.append('source', filters.source);
     if (filters.startDate) params.append('startDate', filters.startDate);
     if (filters.endDate) params.append('endDate', filters.endDate);
@@ -56,6 +57,36 @@ export async function getSources() {
     return response.data.sources;
   } catch (error) {
     console.error('Error fetching sources:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get list of available categories
+ * @returns {Promise<Array>} - Array of category strings
+ */
+export async function getCategories() {
+  try {
+    const response = await api.get('/api/categories');
+    return response.data.categories;
+  } catch (error) {
+    console.error('Error fetching categories:', error);
+    throw error;
+  }
+}
+
+/**
+ * Generate AI-powered insights from articles
+ * @param {Array} articles - Array of article objects
+ * @param {String} category - Category for caching insights (optional)
+ * @returns {Promise<Object>} - Insights organized by themes
+ */
+export async function generateInsights(articles, category = 'all') {
+  try {
+    const response = await api.post('/api/insights', { articles, category });
+    return response.data;
+  } catch (error) {
+    console.error('Error generating insights:', error);
     throw error;
   }
 }

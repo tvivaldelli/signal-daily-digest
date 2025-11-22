@@ -2,23 +2,69 @@
   "sources": [
     {
       "name": "HousingWire",
+      "category": "mortgage",
       "url": "https://www.housingwire.com/",
       "rss": "https://www.housingwire.com/feed/"
     },
     {
-      "name": "Bankrate Mortgage News",
-      "url": "https://www.bankrate.com/",
-      "rss": "https://www.bankrate.com/mortgages/feeds/latest-mortgage-news/"
-    },
-    {
       "name": "Redfin News",
+      "category": "mortgage",
       "url": "https://www.redfin.com/news",
       "rss": "https://www.redfin.com/news/feed/"
     },
     {
-      "name": "Real Estate News",
-      "url": "https://www.realtor.com/",
-      "rss": "https://www.realtor.com/news/rss/"
+      "name": "Rob Chrisman Commentary",
+      "category": "mortgage",
+      "url": "https://www.robchrisman.com/",
+      "rss": "https://www.robchrisman.com/feed/"
+    },
+    {
+      "name": "National Mortgage News",
+      "category": "mortgage",
+      "url": "https://www.nationalmortgagenews.com/",
+      "rss": "https://www.nationalmortgagenews.com/feed?rss=true"
+    },
+    {
+      "name": "MBA Newslink",
+      "category": "mortgage",
+      "url": "https://newslink.mba.org/",
+      "rss": "https://newslink.mba.org/feed/"
+    },
+    {
+      "name": "Lenny's Newsletter",
+      "category": "product-management",
+      "url": "https://www.lennysnewsletter.com/",
+      "rss": "https://www.lennysnewsletter.com/feed"
+    },
+    {
+      "name": "SVPG Articles",
+      "category": "product-management",
+      "url": "https://www.svpg.com/articles/",
+      "rss": "https://www.svpg.com/feed/"
+    },
+    {
+      "name": "Product Talk",
+      "category": "product-management",
+      "url": "https://www.producttalk.org/articles/",
+      "rss": "https://www.producttalk.org/feed/"
+    },
+    {
+      "name": "Lenny's Podcast",
+      "category": "product-management",
+      "url": "https://www.youtube.com/@LennysPodcast",
+      "rss": "https://www.youtube.com/feeds/videos.xml?channel_id=UC6t1O76G0jYXOAoYCm153dA"
+    },
+    {
+      "name": "How I AI Podcast",
+      "category": "product-management",
+      "url": "https://www.youtube.com/@howiaipodcast",
+      "rss": "https://www.youtube.com/feeds/videos.xml?channel_id=UCRYY7IEbkHLH_ScJCu9eWDQ"
+    },
+    {
+      "name": "Supra Insider",
+      "category": "product-management",
+      "url": "https://www.youtube.com/@SupraInsider",
+      "rss": "https://www.youtube.com/feeds/videos.xml?channel_id=UCfAxlqJfB6AwqFtbmxPUELQ"
     }
   ]
 }

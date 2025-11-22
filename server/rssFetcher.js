@@ -5,9 +5,115 @@ import { saveArticle } from './db.js';
 
 const parser = new Parser({
   customFields: {
-    item: ['description', 'content:encoded', 'summary']
+    item: [
+      'description',
+      'content:encoded',
+      'summary',
+      'media:thumbnail',
+      'media:content',
+      'media:group',
+      'itunes:image'
+    ]
   }
 });
+
+/**
+ * Extract YouTube video ID from URL
+ */
+function extractYouTubeVideoId(url) {
+  if (!url) return null;
+
+  // Match patterns like:
+  // - https://www.youtube.com/watch?v=VIDEO_ID
+  // - https://www.youtube.com/shorts/VIDEO_ID
+  // - https://youtu.be/VIDEO_ID
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/,
+    /youtube\.com\/v\/([a-zA-Z0-9_-]{11})/
+  ];
+
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match && match[1]) {
+      return match[1];
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Normalize YouTube thumbnail URL to use standard domain
+ */
+function normalizeYouTubeThumbnailUrl(url) {
+  if (!url) return url;
+
+  // Convert i1/i2/i3/i4.ytimg.com to img.youtube.com for reliability
+  const match = url.match(/https?:\/\/i[1-4]\.ytimg\.com\/vi\/([a-zA-Z0-9_-]+)\/([^\/]+\.jpg)/);
+  if (match) {
+    const videoId = match[1];
+    const quality = match[2];
+    return `https://img.youtube.com/vi/${videoId}/${quality}`;
+  }
+
+  return url;
+}
+
+/**
+ * Extract image URL from RSS item with fallbacks
+ */
+function extractImageUrl(item) {
+  let imageUrl = null;
+
+  // Try media:group > media:thumbnail (YouTube format)
+  if (item['media:group'] && item['media:group']['media:thumbnail']) {
+    const thumbnail = item['media:group']['media:thumbnail'];
+    if (Array.isArray(thumbnail) && thumbnail[0] && thumbnail[0].$) {
+      imageUrl = thumbnail[0].$.url;
+    } else if (thumbnail && thumbnail.$) {
+      imageUrl = thumbnail.$.url;
+    }
+  }
+
+  // Try media:thumbnail (YouTube, media RSS)
+  if (!imageUrl && item['media:thumbnail'] && item['media:thumbnail'].$) {
+    imageUrl = item['media:thumbnail'].$.url;
+  }
+
+  // Try media:content (alternative media RSS format)
+  if (!imageUrl && item['media:content'] && item['media:content'].$) {
+    imageUrl = item['media:content'].$.url;
+  }
+
+  // Try enclosure (standard RSS image)
+  if (!imageUrl && item.enclosure && item.enclosure.url) {
+    imageUrl = item.enclosure.url;
+  }
+
+  // Try itunes:image (podcast artwork)
+  if (!imageUrl && item['itunes:image']) {
+    if (typeof item['itunes:image'] === 'string') {
+      imageUrl = item['itunes:image'];
+    } else if (item['itunes:image'].$ && item['itunes:image'].$.href) {
+      imageUrl = item['itunes:image'].$.href;
+    }
+  }
+
+  // Fallback: Try to construct YouTube thumbnail from video ID
+  if (!imageUrl && item.link) {
+    const videoId = extractYouTubeVideoId(item.link);
+    if (videoId) {
+      imageUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+    }
+  }
+
+  // Normalize YouTube URLs to use standard domain
+  if (imageUrl) {
+    imageUrl = normalizeYouTubeThumbnailUrl(imageUrl);
+  }
+
+  return imageUrl;
+}
 
 /**
  * Load news sources from configuration
@@ -43,13 +149,18 @@ async function fetchRSS(source) {
           .substring(0, 300)
           .trim() + '...';
 
+        // Extract image URL from various possible sources
+        const imageUrl = extractImageUrl(item);
+
         const article = {
           title: item.title,
           link: item.link,
           pubDate: item.pubDate || item.isoDate || new Date().toISOString(),
           source: source.name,
+          category: source.category || '',
           summary: quickSummary,
-          originalContent: content.substring(0, 500) // Store first 500 chars
+          originalContent: content.substring(0, 500), // Store first 500 chars
+          imageUrl: imageUrl
         };
 
         // Save to database
