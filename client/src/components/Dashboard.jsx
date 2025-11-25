@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getArticles, refreshArticles, generateInsights, getCategories } from '../services/api';
+import { getArticles, generateInsights, getCategories } from '../services/api';
 import ArticleCard from './ArticleCard';
 import InsightsSummary from './InsightsSummary';
 import './Dashboard.css';
@@ -8,14 +8,14 @@ export default function Dashboard() {
   const [articles, setArticles] = useState([]);
   const [allArticles, setAllArticles] = useState([]); // Store all articles for insights
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [filters, setFilters] = useState({});
-  const [insights, setInsights] = useState(null);
+  const [insightsByCategory, setInsightsByCategory] = useState({}); // Cache insights by category
   const [insightsLoading, setInsightsLoading] = useState(false);
   const [insightsError, setInsightsError] = useState(null);
   const [categories, setCategories] = useState([]);
-  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [selectedCategory, setSelectedCategory] = useState('all'); // 'all', 'mortgage', 'product-management'
+  const [showAllArticles, setShowAllArticles] = useState(false); // Toggle for 30-day filter
 
   // Load categories and articles on mount
   useEffect(() => {
@@ -27,7 +27,7 @@ export default function Dashboard() {
     if (allArticles.length > 0) {
       filterArticles();
     }
-  }, [filters, selectedCategory, allArticles]);
+  }, [filters, selectedCategory, allArticles, showAllArticles]);
 
   // Load categories from API
   async function loadCategoriesAndArticles() {
@@ -65,15 +65,25 @@ export default function Dashboard() {
   // Regenerate insights when category changes
   useEffect(() => {
     if (allArticles.length > 0 && selectedCategory) {
-      const categoryArticles = selectedCategory === 'all'
-        ? allArticles
-        : allArticles.filter(a => a.category === selectedCategory);
+      if (selectedCategory === 'all') {
+        // Load insights for both mortgage and product-management
+        const mortgageArticles = allArticles.filter(a => a.category === 'mortgage');
+        const pmArticles = allArticles.filter(a => a.category === 'product-management');
 
-      if (categoryArticles.length > 0) {
-        loadInsightsForCategory(categoryArticles, selectedCategory);
+        if (mortgageArticles.length > 0) {
+          loadInsightsForCategory(mortgageArticles, 'mortgage');
+        }
+        if (pmArticles.length > 0) {
+          loadInsightsForCategory(pmArticles, 'product-management');
+        }
       } else {
-        setInsights(null);
-        setInsightsError(null);
+        // Load insights for single category
+        const categoryArticles = allArticles.filter(a => a.category === selectedCategory);
+        if (categoryArticles.length > 0) {
+          loadInsightsForCategory(categoryArticles, selectedCategory);
+        } else {
+          setInsightsError(null);
+        }
       }
     }
   }, [selectedCategory, allArticles]);
@@ -81,6 +91,14 @@ export default function Dashboard() {
   // Filter articles on the frontend (instant, no loading state)
   function filterArticles() {
     let filtered = [...allArticles];
+
+    // Apply 2-week filter by default (unless showing all articles) - matches insights window
+    if (!showAllArticles) {
+      const twoWeeksAgo = new Date();
+      twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+      twoWeeksAgo.setHours(0, 0, 0, 0);
+      filtered = filtered.filter(a => new Date(a.pubDate) >= twoWeeksAgo);
+    }
 
     // Apply category filter
     if (selectedCategory && selectedCategory !== 'all') {
@@ -121,34 +139,41 @@ export default function Dashboard() {
   }
 
   async function loadInsightsForCategory(articlesData, category) {
+    // Check if we already have cached insights for this category
+    if (insightsByCategory[category]) {
+      console.log(`Using cached insights for category: ${category}`);
+      return;
+    }
+
+    // Filter to last 2 weeks for insights (more actionable, faster, cheaper)
+    const twoWeeksAgo = new Date();
+    twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+    let recentArticles = articlesData.filter(a => new Date(a.pubDate) >= twoWeeksAgo);
+
+    // Fallback: If < 10 articles in 2 weeks, expand to 30 days
+    if (recentArticles.length < 10) {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      recentArticles = articlesData.filter(a => new Date(a.pubDate) >= thirtyDaysAgo);
+      console.log(`Only ${articlesData.filter(a => new Date(a.pubDate) >= twoWeeksAgo).length} articles in last 2 weeks, expanding to 30 days (${recentArticles.length} articles)`);
+    }
+
     try {
       setInsightsLoading(true);
       setInsightsError(null);
-      console.log(`Generating insights for category: ${category} (${articlesData.length} articles)`);
-      const insightsData = await generateInsights(articlesData, category);
-      setInsights(insightsData);
+      console.log(`Generating insights for category: ${category} (${recentArticles.length} articles from last 2 weeks)`);
+      const insightsData = await generateInsights(recentArticles, category);
+
+      // Cache the insights by category
+      setInsightsByCategory(prev => ({
+        ...prev,
+        [category]: insightsData
+      }));
     } catch (err) {
       setInsightsError('Unable to generate insights at this time.');
       console.error('Error generating insights:', err);
     } finally {
       setInsightsLoading(false);
-    }
-  }
-
-  async function handleRefresh() {
-    try {
-      setRefreshing(true);
-      setError(null);
-      const result = await refreshArticles();
-      console.log(`Refreshed ${result.count} articles`);
-
-      // Reload all articles and regenerate insights after refresh
-      await loadAllArticlesAndInsights();
-    } catch (err) {
-      setError('Failed to refresh articles. Please try again.');
-      console.error('Error refreshing articles:', err);
-    } finally {
-      setRefreshing(false);
     }
   }
 
@@ -192,11 +217,19 @@ export default function Dashboard() {
       ? formatDate(newestDate)
       : `${formatDate(oldestDate)} - ${formatDate(newestDate)}`;
 
+    // Format newest date as "Month Day, Year" for "Updated as of"
+    const updatedAsOf = newestDate.toLocaleDateString('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric'
+    });
+
     // Calculate time ago for insights
     let insightsAge = '';
-    if (insights?.generatedAt) {
+    const currentInsights = insightsByCategory[selectedCategory];
+    if (currentInsights?.generatedAt) {
       const now = new Date();
-      const generated = new Date(insights.generatedAt);
+      const generated = new Date(currentInsights.generatedAt);
       const diffMs = now - generated;
       const diffMins = Math.floor(diffMs / 60000);
       const diffHours = Math.floor(diffMins / 60);
@@ -213,14 +246,13 @@ export default function Dashboard() {
       }
     }
 
-    return { dateRange, insightsAge };
+    return { dateRange, insightsAge, updatedAsOf };
   }
 
   const dateInfo = getDateInfo();
 
   // Format category name for display
   function formatCategoryName(category) {
-    if (category === 'all') return 'All Content';
     return category.split('-').map(word =>
       word.charAt(0).toUpperCase() + word.slice(1)
     ).join(' ');
@@ -230,39 +262,16 @@ export default function Dashboard() {
     <div className="dashboard">
       <header className="dashboard-header">
         <div className="header-content">
-          <div>
-            <h1>News Monitor</h1>
-            <p className="subtitle">Stay updated with industry news and insights</p>
-          </div>
-          <button
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className="refresh-button"
-            title="Refresh articles"
-          >
-            {refreshing ? '↻' : '↻'}
-          </button>
+          <div className="header-badge">Industry Intelligence Platform</div>
+          <h1>
+            <span className="header-icon-wrapper">
+              <span className="header-icon">💡</span>
+            </span>
+            Mortgage Intelligence Hub
+          </h1>
+          <p className="subtitle">Real-time insights for product leaders • Powered by AI</p>
         </div>
       </header>
-
-      {dateInfo && (
-        <div className="date-info-bar">
-          <span className="info-item">
-            <span className="info-icon">📅</span>
-            <span className="info-text">Articles: {dateInfo.dateRange}</span>
-          </span>
-          {dateInfo.insightsAge && (
-            <span className="info-item">
-              <span className="info-icon">🔄</span>
-              <span className="info-text">Updated: {dateInfo.insightsAge}</span>
-            </span>
-          )}
-          <span className="info-item">
-            <span className="info-icon">⏰</span>
-            <span className="info-text">Next refresh: 8:00 AM EST</span>
-          </span>
-        </div>
-      )}
 
       {error && (
         <div className="error-message">
@@ -270,34 +279,65 @@ export default function Dashboard() {
         </div>
       )}
 
-      {categories.length > 0 && (
-        <div className="category-pills">
-          <button
-            className={`category-pill ${selectedCategory === 'all' ? 'active' : ''}`}
-            onClick={() => setSelectedCategory('all')}
-          >
-            All Content ({allArticles.length})
-          </button>
-          {categories.map(category => {
-            const count = allArticles.filter(a => a.category === category).length;
-            return (
-              <button
-                key={category}
-                className={`category-pill ${selectedCategory === category ? 'active' : ''}`}
-                onClick={() => setSelectedCategory(category)}
-              >
-                {formatCategoryName(category)} ({count})
-              </button>
-            );
-          })}
+      {/* Category Filters */}
+      {allArticles.length > 0 && (
+        <div className="unified-filters">
+          <div className="filter-header-row">
+            {dateInfo?.updatedAsOf && (
+              <div className="updated-label">
+                Updated as of {dateInfo.updatedAsOf}
+                <span className="refresh-schedule"> • Insights refresh daily at 8am EST</span>
+              </div>
+            )}
+            <button
+              className="toggle-articles-btn"
+              onClick={() => setShowAllArticles(!showAllArticles)}
+            >
+              {showAllArticles ? 'Show Recent Only' : 'Show All Articles'}
+            </button>
+          </div>
+
+          {categories.length > 0 && (
+            <div className="filter-group">
+              <span className="filter-label">Domain:</span>
+              <div className="filter-buttons">
+                <button
+                  className={`filter-btn ${selectedCategory === 'all' ? 'active' : ''}`}
+                  onClick={() => setSelectedCategory('all')}
+                >
+                  All ({allArticles.length})
+                </button>
+                {categories.map(category => {
+                  const count = allArticles.filter(a => a.category === category).length;
+                  return (
+                    <button
+                      key={category}
+                      className={`filter-btn ${selectedCategory === category ? 'active' : ''}`}
+                      onClick={() => setSelectedCategory(category)}
+                    >
+                      {formatCategoryName(category)} ({count})
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="article-count-display">
+            Showing {articles.length} article{articles.length !== 1 ? 's' : ''} {showAllArticles ? '(all time)' : 'from last 2 weeks'}
+          </div>
         </div>
       )}
 
       {!loading && articles.length > 0 && (
         <InsightsSummary
-          insights={insights}
+          insights={selectedCategory === 'all'
+            ? { mortgage: insightsByCategory['mortgage'], productManagement: insightsByCategory['product-management'] }
+            : insightsByCategory[selectedCategory]
+          }
           loading={insightsLoading}
           error={insightsError}
+          multiDomain={selectedCategory === 'all'}
         />
       )}
 
@@ -309,36 +349,32 @@ export default function Dashboard() {
       ) : articles.length === 0 ? (
         <div className="empty-state">
           <h2>No articles found</h2>
-          <p>Try adjusting your filters or click the refresh button to fetch new content.</p>
+          <p>Try adjusting your filters. Articles are automatically refreshed daily at 8am EST.</p>
         </div>
       ) : (
         <div className="articles-container">
-          {/* Source filter pills */}
-          <div className="source-filters">
-            <span className="filter-label">Filter by source:</span>
-            <div className="source-pills">
-              <button
-                className={`source-pill ${!filters.source ? 'active' : ''}`}
-                onClick={() => setFilters({ ...filters, source: '' })}
-              >
-                All Sources
-              </button>
+          {/* Compact source filter dropdown */}
+          <div className="source-filter-compact">
+            <label htmlFor="source-select" className="filter-label-inline">Source:</label>
+            <select
+              id="source-select"
+              className="source-select"
+              value={filters.source || ''}
+              onChange={(e) => setFilters({ ...filters, source: e.target.value })}
+            >
+              <option value="">All Sources</option>
               {getSourcesForCategory().map(source => {
                 const categoryArticles = selectedCategory === 'all'
                   ? allArticles
                   : allArticles.filter(a => a.category === selectedCategory);
                 const count = categoryArticles.filter(a => a.source === source).length;
                 return (
-                  <button
-                    key={source}
-                    className={`source-pill ${filters.source === source ? 'active' : ''}`}
-                    onClick={() => handleSourceFilter(source)}
-                  >
+                  <option key={source} value={source}>
                     {source} ({count})
-                  </button>
+                  </option>
                 );
               })}
-            </div>
+            </select>
           </div>
 
           <div className="articles-list">

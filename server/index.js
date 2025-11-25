@@ -18,7 +18,10 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: true, // Allow all origins in development
+  credentials: true
+}));
 app.use(express.json());
 
 // Health check endpoint
@@ -153,12 +156,21 @@ app.post('/api/insights', async (req, res) => {
 
     // Check for cached insights for this specific category
     const cachedInsights = await getInsights(category);
-    if (cachedInsights) {
-      console.log(`[API] Returning cached insights for category: ${category}`);
-      return res.json(cachedInsights);
+    if (cachedInsights && cachedInsights.generatedAt) {
+      const generatedDate = new Date(cachedInsights.generatedAt);
+      const now = new Date();
+      const hoursSinceGeneration = (now - generatedDate) / (1000 * 60 * 60);
+
+      // Only regenerate if insights are older than 24 hours
+      if (hoursSinceGeneration < 24) {
+        console.log(`[API] Returning cached insights for category: ${category} (generated ${hoursSinceGeneration.toFixed(1)} hours ago)`);
+        return res.json(cachedInsights);
+      } else {
+        console.log(`[API] Cached insights are ${hoursSinceGeneration.toFixed(1)} hours old, regenerating...`);
+      }
     }
 
-    console.log(`\n[API] Generating insights for ${articles.length} articles (category: ${category})...`);
+    console.log(`\n[API] Generating new insights for ${articles.length} articles (category: ${category})...`);
 
     const insights = await generateInsights(articles);
 

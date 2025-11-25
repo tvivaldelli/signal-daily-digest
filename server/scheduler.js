@@ -12,13 +12,30 @@ async function fetchAndCacheContent() {
     await fetchAllFeeds();
     console.log('[Scheduler] Fetch completed successfully');
 
-    // Pre-generate insights for the fetched articles
-    console.log('[Scheduler] Pre-generating insights...');
+    // Pre-generate insights for each category
+    console.log('[Scheduler] Pre-generating insights by category...');
     const articles = await getArticles({});
+
     if (articles && articles.length > 0) {
-      const insights = await generateInsights(articles);
-      await saveInsights(insights);
-      console.log('[Scheduler] Insights pre-generated and cached');
+      // Generate insights for mortgage category
+      const mortgageArticles = articles.filter(a => a.category === 'mortgage');
+      if (mortgageArticles.length > 0) {
+        console.log(`[Scheduler] Generating insights for mortgage (${mortgageArticles.length} articles)...`);
+        const mortgageInsights = await generateInsights(mortgageArticles);
+        await saveInsights(mortgageInsights, 'mortgage');
+        console.log('[Scheduler] Mortgage insights cached');
+      }
+
+      // Generate insights for product-management category
+      const pmArticles = articles.filter(a => a.category === 'product-management');
+      if (pmArticles.length > 0) {
+        console.log(`[Scheduler] Generating insights for product-management (${pmArticles.length} articles)...`);
+        const pmInsights = await generateInsights(pmArticles);
+        await saveInsights(pmInsights, 'product-management');
+        console.log('[Scheduler] Product Management insights cached');
+      }
+
+      console.log('[Scheduler] All insights pre-generated and cached successfully');
     }
   } catch (error) {
     console.error('[Scheduler] Error during fetch:', error);

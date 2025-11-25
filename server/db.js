@@ -15,17 +15,31 @@ async function initDB() {
         link VARCHAR(2048) UNIQUE NOT NULL,
         title TEXT NOT NULL,
         source VARCHAR(255),
+        category VARCHAR(255),
         summary TEXT,
         original_content TEXT,
+        image_url TEXT,
         pub_date TIMESTAMP,
         saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
-      
+    `);
+
+    // Add missing columns to existing table (if they don't exist)
+    try {
+      await pool.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS category VARCHAR(255)`);
+      await pool.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS image_url TEXT`);
+    } catch (alterError) {
+      // Columns might already exist, that's okay
+    }
+
+    await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_source ON articles(source);
+      CREATE INDEX IF NOT EXISTS idx_category ON articles(category);
       CREATE INDEX IF NOT EXISTS idx_pub_date ON articles(pub_date);
       CREATE INDEX IF NOT EXISTS idx_saved_at ON articles(saved_at);
     `);
+
     console.log('[DB] ✓ Database initialized');
   } catch (error) {
     console.error('[DB] Error initializing database:', error.message);
@@ -37,23 +51,27 @@ async function initDB() {
  */
 export async function saveArticle(article) {
   try {
-    const { title, link, pubDate, source, summary, originalContent } = article;
-    
+    const { title, link, pubDate, source, category, summary, originalContent, imageUrl } = article;
+
     await pool.query(
-      `INSERT INTO articles (title, link, pub_date, source, summary, original_content)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO articles (title, link, pub_date, source, category, summary, original_content, image_url)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        ON CONFLICT (link) DO UPDATE SET
          title = EXCLUDED.title,
+         category = EXCLUDED.category,
          summary = EXCLUDED.summary,
-         original_content = EXCLUDED.original_content
+         original_content = EXCLUDED.original_content,
+         image_url = EXCLUDED.image_url
        `,
       [
         title || '',
         link || '',
         pubDate || new Date().toISOString(),
         source || '',
+        category || '',
         (summary || '').substring(0, 5000),
-        (originalContent || '').substring(0, 5000)
+        (originalContent || '').substring(0, 5000),
+        imageUrl || null
       ]
     );
 
@@ -77,6 +95,12 @@ export async function getArticles(filters = {}) {
     if (filters.source) {
       query += ` AND source = $${paramIndex}`;
       params.push(filters.source);
+      paramIndex++;
+    }
+
+    if (filters.category) {
+      query += ` AND category = $${paramIndex}`;
+      params.push(filters.category);
       paramIndex++;
     }
 
@@ -112,8 +136,10 @@ export async function getArticles(filters = {}) {
       link: row.link,
       pubDate: row.pub_date,
       source: row.source,
+      category: row.category,
       summary: row.summary,
-      originalContent: row.original_content
+      originalContent: row.original_content,
+      imageUrl: row.image_url
     }));
 
     console.log(`[DB] Retrieved ${articles.length} articles`);
@@ -160,15 +186,20 @@ export async function cleanOldArticles() {
   }
 }
 
+// In-memory insights cache (keyed by category)
+let cachedInsightsData = {};
+
 /**
- * Save insights to database
+ * Save insights to cache
  */
-export async function saveInsights(insights) {
+export async function saveInsights(insights, category = 'all') {
   try {
-    // For now, store insights as JSON in a simple way
-    // In a production app, you'd want a dedicated insights table
-    console.log('[DB] ✓ Insights generated and ready');
-    return insights;
+    cachedInsightsData[category] = {
+      ...insights,
+      cachedAt: new Date().toISOString()
+    };
+    console.log(`[DB] ✓ Insights cached for category: ${category}`);
+    return cachedInsightsData[category];
   } catch (error) {
     console.error('[DB] Error saving insights:', error.message);
     return null;
@@ -176,31 +207,38 @@ export async function saveInsights(insights) {
 }
 
 /**
- * Get insights
+ * Get cached insights
  */
-export async function getInsights() {
+export async function getInsights(category = 'all') {
   try {
-    // Return aggregated insights from articles
-    const result = await pool.query(
-      `SELECT source, COUNT(*) as count, MAX(pub_date) as latest
-       FROM articles
-       GROUP BY source
-       ORDER BY count DESC`
-    );
-    return result.rows;
+    if (cachedInsightsData[category]) {
+      console.log(`[DB] ✓ Returning cached insights for category: ${category}`);
+      return cachedInsightsData[category];
+    }
+    return null;
   } catch (error) {
     console.error('[DB] Error getting insights:', error.message);
-    return [];
+    return null;
   }
 }
 
 /**
- * Clear insights
+ * Clear cached insights
  */
-export async function clearInsights() {
-  // Insights are generated on the fly, so nothing to clear
-  console.log('[DB] Insights cleared');
-  return true;
+export async function clearInsights(category = null) {
+  try {
+    if (category) {
+      delete cachedInsightsData[category];
+      console.log(`[DB] ✓ Insights cache cleared for category: ${category}`);
+    } else {
+      cachedInsightsData = {};
+      console.log('[DB] ✓ All insights cache cleared');
+    }
+    return true;
+  } catch (error) {
+    console.error('[DB] Error clearing insights:', error.message);
+    return false;
+  }
 }
 
 // Initialize database when module loads

@@ -37,61 +37,77 @@ export async function generateInsights(articles) {
       pubDate: article.pubDate
     }));
 
-    const prompt = `You are analyzing mortgage and real estate industry articles for a Product Manager at Freedom Mortgage who is responsible for the digital experience. Your analysis should focus on actionable insights and strategic recommendations.
+    const prompt = `You are a strategic analyst for a Product Manager at Freedom Mortgage who is responsible for the digital mortgage experience. Analyze these articles to identify the most important strategic themes and actionable intelligence.
 
 Articles:
 ${JSON.stringify(articleSummaries, null, 2)}
 
-Please provide a comprehensive analysis with:
+ANALYSIS REQUIREMENTS:
 
-1. **Recommended Actions** (5-7 high-priority actions for Freedom Mortgage's digital experience):
-   - Focus on: product features, competitive intelligence, customer experience insights, technology & innovation
-   - Each action should be specific, strategic, and tied to market trends/opportunities
-   - Prioritize actions that can differentiate Freedom Mortgage's digital experience
+1. **Top Strategic Actions** (4-6 highest-impact actions):
+   - Focus on competitive differentiation and measurable business impact
+   - Each action must include: specific implementation, expected outcome, and priority level
+   - Categories: Product Innovation | Competitive Intelligence | Customer Experience | Technology & AI
+   - Be specific about HOW to implement, not just WHAT to do
 
-2. **Thematic Insights** (5-7 major themes):
-   - Common themes: Market Trends, Technology & Innovation, Policy & Regulation, Lending Practices, Housing Affordability, Industry Commentary/Roundups, Customer Experience, Competitive Landscape
-   - IMPORTANT: Ensure each source represented in the articles appears in at least one insight for balanced coverage
-   - For each theme provide:
-     * A clear theme name with relevant icon
-     * 2-4 key insights (each 3-5 sentences with specific details, data points, context)
-     * 2-3 specific recommended actions related to this theme for the PM
-     * Article IDs that support each insight
+2. **Strategic Themes** (3-4 ONLY - Quality over quantity):
+   - Identify only the MOST IMPORTANT themes with significant strategic implications
+   - Skip minor topics - focus on what truly matters for competitive advantage
+   - For each theme provide DEEP ANALYSIS:
+     * What's happening: Specific trends, data points, statistics from articles
+     * Why it matters: Strategic implications, competitive context, market impact
+     * What to do: Concrete recommendations with expected business outcomes
+     * Supporting evidence: Article IDs and specific quotes/data
 
-Return your response as a JSON object with this structure:
+ANALYTICAL DEPTH REQUIREMENTS:
+- Every insight must answer "So what?" - explain strategic significance
+- Include specific numbers, percentages, quotes, or data points from articles
+- Identify cause-and-effect relationships and trends
+- Compare/contrast different approaches or perspectives in the articles
+- Highlight competitive threats and opportunities
+- Focus on what gives Freedom Mortgage an edge in digital experience
+
+JSON STRUCTURE:
 {
+  "tldr": [
+    "Concise bullet point 1 (1-2 sentences max, direct statement, no article citations)",
+    "Concise bullet point 2 (1-2 sentences max, direct statement, no article citations)",
+    "Concise bullet point 3 (1-2 sentences max, direct statement, no article citations)"
+  ],
   "recommendedActions": [
     {
-      "action": "Clear, specific action statement",
-      "rationale": "Why this matters for Freedom Mortgage's digital experience (1-2 sentences)",
-      "category": "Product Features" or "Competitive Intelligence" or "Customer Experience" or "Technology & Innovation"
+      "action": "Specific, measurable action with implementation details",
+      "rationale": "Why this creates competitive advantage (with data/evidence)",
+      "category": "Product Innovation" | "Competitive Intelligence" | "Customer Experience" | "Technology & AI",
+      "priority": "High" | "Medium",
+      "expectedImpact": "Specific business outcome (e.g., reduce drop-off by X%, increase conversion)"
     }
   ],
   "themes": [
     {
-      "name": "Theme Name",
-      "icon": "📊" or "💻" or "📜" or "🏠" or "💬" or "🎯" or "⚡" etc,
+      "name": "Strategic theme name (concise)",
+      "icon": "📊" | "💻" | "📜" | "🏠" | "🎯" | "⚡" | "🔍" | "💡",
       "insights": [
         {
-          "text": "Key insight text with specific details and context...",
-          "articleIds": [0, 3, 7]
+          "text": "ANALYTICAL insight: What's happening + Why it matters + Strategic implications. Include specific data points, statistics, quotes. 4-6 sentences with depth.",
+          "articleIds": [relevant article IDs]
         }
       ],
       "actions": [
         {
-          "action": "Specific action related to this theme",
-          "impact": "Expected impact on digital experience"
+          "action": "Specific action with clear implementation path",
+          "impact": "Measurable business impact on digital mortgage experience"
         }
       ]
     }
   ]
 }
 
-Provide detailed analysis including specific metrics, trends, implications, and actionable takeaways. Include relevant context such as statistics, quotes, or specific developments. Focus on what would be most valuable for a product manager building a competitive digital mortgage experience. Think strategically about market opportunities, user needs, and competitive differentiation.`;
+Focus on QUALITY over COVERAGE. It's better to have 3 deeply analyzed themes than 7 superficial ones. Think like a strategic consultant - identify patterns, implications, and opportunities that a busy PM would miss by just reading headlines.`;
 
     const message = await anthropic.messages.create({
-      model: 'claude-3-5-haiku-20241022',
-      max_tokens: 5000,
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 8000, // Increased for more detailed insights
       messages: [{
         role: 'user',
         content: prompt
@@ -129,9 +145,19 @@ Provide detailed analysis including specific metrics, trends, implications, and 
     const finalThemes = ensureSourceCoverage(themesWithArticles, articleSummaries);
 
     console.log(`[Insights] Generated ${finalThemes.length} themes from ${articles.length} articles`);
+    console.log(`[Insights] TL;DR bullets: ${insightsData.tldr?.length || 0}`);
+    console.log(`[Insights] Recommended actions: ${insightsData.recommendedActions?.length || 0}`);
+
+    // Debug: Log if tldr is missing
+    if (!insightsData.tldr || insightsData.tldr.length === 0) {
+      console.log('[Insights] WARNING: No TL;DR generated by Claude!');
+      console.log('[Insights] Raw response keys:', Object.keys(insightsData));
+    }
 
     return {
       success: true,
+      tldr: insightsData.tldr || [], // Include TL;DR bullets
+      recommendedActions: insightsData.recommendedActions || [],
       themes: finalThemes,
       articleCount: articles.length,
       generatedAt: new Date().toISOString()
@@ -144,8 +170,8 @@ Provide detailed analysis including specific metrics, trends, implications, and 
 }
 
 /**
- * Ensure every source is represented in the insights
- * Post-processes AI-generated themes to add missing sources
+ * Ensure every source is represented in the insights (OPTIONAL)
+ * Only add if there are significant missing sources (more than 30% uncovered)
  */
 function ensureSourceCoverage(themes, articleSummaries) {
   // Get all unique sources from articles
@@ -166,46 +192,42 @@ function ensureSourceCoverage(themes, articleSummaries) {
   // Find missing sources
   const missingSources = allSources.filter(source => !representedSources.has(source));
 
-  if (missingSources.length === 0) {
-    return themes; // All sources already represented
+  // Only add commentary section if more than 30% of sources are missing
+  const coveragePercent = (representedSources.size / allSources.length) * 100;
+
+  if (missingSources.length === 0 || coveragePercent >= 70) {
+    console.log(`[Insights] Source coverage: ${Math.round(coveragePercent)}% - skipping commentary section`);
+    return themes; // Good coverage, no need for filler
   }
 
-  console.log(`[Insights] Adding coverage for ${missingSources.length} missing source(s): ${missingSources.join(', ')}`);
+  console.log(`[Insights] Low coverage (${Math.round(coveragePercent)}%) - adding ${missingSources.length} missing sources`);
 
-  // Find or create an "Industry Commentary" theme for missing sources
-  let commentaryTheme = themes.find(t =>
-    t.name.toLowerCase().includes('commentary') ||
-    t.name.toLowerCase().includes('roundup') ||
-    t.name.toLowerCase().includes('industry news')
+  // Only create commentary for truly important missing sources
+  // Skip generic roundup sources
+  const importantMissingSources = missingSources.filter(source =>
+    !source.toLowerCase().includes('newsletter') &&
+    !source.toLowerCase().includes('podcast') &&
+    missingSources.length <= 3 // Only if very few sources missing
   );
 
-  if (!commentaryTheme) {
-    // Create new theme for missing sources
-    commentaryTheme = {
-      name: 'Industry Commentary & Updates',
-      icon: '💬',
-      insights: []
-    };
-    themes.push(commentaryTheme);
+  if (importantMissingSources.length === 0) {
+    return themes;
   }
 
-  // Add insights for each missing source
-  missingSources.forEach(source => {
-    const sourceArticles = articleSummaries.filter(a => a.source === source);
-    if (sourceArticles.length > 0) {
-      // Create an insight for this source
-      const articleTitles = sourceArticles.slice(0, 3).map(a => a.title).join('; ');
-      const insightText = sourceArticles.length === 1
-        ? `${source} provides commentary: ${sourceArticles[0].title}`
-        : `${source} covers ${sourceArticles.length} topics including ${articleTitles.substring(0, 150)}${articleTitles.length > 150 ? '...' : ''}`;
+  // Create minimal coverage theme
+  const commentaryTheme = {
+    name: 'Additional Insights',
+    icon: '💡',
+    insights: importantMissingSources.map(source => {
+      const sourceArticles = articleSummaries.filter(a => a.source === source);
+      return {
+        text: `${source}: ${sourceArticles.length} article${sourceArticles.length > 1 ? 's' : ''} on industry developments`,
+        articles: sourceArticles.slice(0, 3)
+      };
+    })
+  };
 
-      commentaryTheme.insights.push({
-        text: insightText,
-        articles: sourceArticles.slice(0, 5) // Limit to 5 articles
-      });
-    }
-  });
-
+  themes.push(commentaryTheme);
   return themes;
 }
 
