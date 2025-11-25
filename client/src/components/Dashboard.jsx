@@ -322,10 +322,6 @@ export default function Dashboard() {
               </div>
             </div>
           )}
-
-          <div className="article-count-display">
-            Showing {articles.length} article{articles.length !== 1 ? 's' : ''} {showAllArticles ? '(all time)' : 'from last 2 weeks'}
-          </div>
         </div>
       )}
 

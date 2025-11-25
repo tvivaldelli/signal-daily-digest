@@ -551,10 +551,10 @@
 
 /* Recommended Actions - Condensed */
 .recommended-actions {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(14, 165, 233, 0.08);
   border-radius: 8px;
   padding: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(14, 165, 233, 0.2);
   height: 100%;
   overflow-y: auto;
 }
@@ -579,10 +579,10 @@
 }
 
 .action-item-compact {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(14, 165, 233, 0.08);
   border-radius: 6px;
   padding: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(14, 165, 233, 0.2);
 }
 
 .action-category-compact {
