@@ -24,7 +24,10 @@
       "Bash(npm run build:*)",
       "Bash(for url in \"https://i4.ytimg.com/vi/cPujjPgUnHo/hqdefault.jpg\" \"https://i3.ytimg.com/vi/RaFX5rnKKtY/hqdefault.jpg\" \"https://i2.ytimg.com/vi/QeboYVNKo2Q/hqdefault.jpg\")",
       "Bash(do echo \"Testing: $url\" curl -I \"$url\")",
-      "Bash(timeout 10 npm run dev:*)"
+      "Bash(timeout 10 npm run dev:*)",
+      "Bash(env)",
+      "Bash(lsof:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []
