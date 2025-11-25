@@ -1,8 +1,29 @@
-import { format } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import './ArticleCard.css';
 
 export default function ArticleCard({ article }) {
-  const formattedDate = format(new Date(article.pubDate), 'MMM dd, yyyy');
+  const articleDate = new Date(article.pubDate);
+  const now = new Date();
+  const hoursSincePublished = (now - articleDate) / (1000 * 60 * 60);
+
+  // Determine if article is new (less than 24 hours old)
+  const isNew = hoursSincePublished < 24;
+
+  // Format date based on how old it is
+  let formattedDate;
+  if (hoursSincePublished < 1) {
+    const minutes = Math.floor((now - articleDate) / (1000 * 60));
+    formattedDate = minutes < 1 ? 'Just now' : `${minutes}m ago`;
+  } else if (hoursSincePublished < 24) {
+    formattedDate = `${Math.floor(hoursSincePublished)}h ago`;
+  } else if (hoursSincePublished < 48) {
+    formattedDate = 'Yesterday';
+  } else if (hoursSincePublished < 168) { // Less than 7 days
+    const days = Math.floor(hoursSincePublished / 24);
+    formattedDate = `${days} days ago`;
+  } else {
+    formattedDate = format(articleDate, 'MMM dd, yyyy');
+  }
 
   // Normalize YouTube thumbnail URLs to use more reliable domain
   const normalizeYouTubeThumbnail = (url) => {
@@ -35,7 +56,10 @@ export default function ArticleCard({ article }) {
     <div className="article-card">
       <div className="article-header">
         <span className="article-source">{article.source}</span>
-        <span className="article-date">{formattedDate}</span>
+        <div className="article-meta">
+          {isNew && <span className="new-badge">NEW</span>}
+          <span className="article-date">{formattedDate}</span>
+        </div>
       </div>
 
       {article.imageUrl && (

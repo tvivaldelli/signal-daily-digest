@@ -2,6 +2,7 @@ import Parser from 'rss-parser';
 import { readFile } from 'fs/promises';
 import { summarizeArticle } from './claudeSummarizer.js';
 import { saveArticle } from './db.js';
+import { decode } from 'html-entities';
 
 const parser = new Parser({
   customFields: {
@@ -144,8 +145,8 @@ async function fetchRSS(source) {
         const content = item['content:encoded'] || item.description || item.summary || '';
 
         // Use quick summary from content (no Claude to avoid timeouts)
-        const quickSummary = content
-          .replace(/<[^>]*>/g, '') // Remove HTML tags
+        const cleanContent = decode(content.replace(/<[^>]*>/g, '')); // Remove HTML tags and decode entities
+        const quickSummary = cleanContent
           .substring(0, 300)
           .trim() + '...';
 
@@ -153,13 +154,13 @@ async function fetchRSS(source) {
         const imageUrl = extractImageUrl(item);
 
         const article = {
-          title: item.title,
+          title: decode(item.title || ''), // Decode HTML entities in title
           link: item.link,
           pubDate: item.pubDate || item.isoDate || new Date().toISOString(),
           source: source.name,
           category: source.category || '',
           summary: quickSummary,
-          originalContent: content.substring(0, 500), // Store first 500 chars
+          originalContent: cleanContent.substring(0, 500), // Store first 500 chars
           imageUrl: imageUrl
         };
 
