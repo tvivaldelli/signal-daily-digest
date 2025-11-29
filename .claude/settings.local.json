@@ -27,7 +27,9 @@
       "Bash(timeout 10 npm run dev:*)",
       "Bash(env)",
       "Bash(lsof:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(timeout 5 node:*)",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []
