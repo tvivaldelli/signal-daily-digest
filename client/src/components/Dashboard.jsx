@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { getArticles, generateInsights, getCategories } from '../services/api';
 import ArticleCard from './ArticleCard';
 import InsightsSummary from './InsightsSummary';
+import InsightsArchive from './InsightsArchive';
 import './Dashboard.css';
 
 export default function Dashboard() {
@@ -16,6 +17,7 @@ export default function Dashboard() {
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('all'); // 'all', 'mortgage', 'product-management'
   const [showAllArticles, setShowAllArticles] = useState(false); // Toggle for 30-day filter
+  const [activeTab, setActiveTab] = useState('insights'); // 'insights' or 'archive'
 
   // Load categories and articles on mount
   useEffect(() => {
@@ -270,6 +272,22 @@ export default function Dashboard() {
             Mortgage Intelligence Hub
           </h1>
           <p className="subtitle">Real-time insights for product leaders • Powered by AI</p>
+
+          {/* Main navigation tabs */}
+          <div className="main-tabs">
+            <button
+              className={`main-tab ${activeTab === 'insights' ? 'active' : ''}`}
+              onClick={() => setActiveTab('insights')}
+            >
+              Current Insights
+            </button>
+            <button
+              className={`main-tab ${activeTab === 'archive' ? 'active' : ''}`}
+              onClick={() => setActiveTab('archive')}
+            >
+              Insights Archive
+            </button>
+          </div>
         </div>
       </header>
 
@@ -279,106 +297,116 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Category Filters */}
-      {allArticles.length > 0 && (
-        <div className="unified-filters">
-          <div className="filter-header-row">
-            {dateInfo?.updatedAsOf && (
-              <div className="updated-label">
-                Updated as of {dateInfo.updatedAsOf}
-                <span className="refresh-schedule"> • Insights refresh daily at 8am EST</span>
-              </div>
-            )}
-            <button
-              className="toggle-articles-btn"
-              onClick={() => setShowAllArticles(!showAllArticles)}
-            >
-              {showAllArticles ? 'Show Recent Only' : 'Show All Articles'}
-            </button>
-          </div>
+      {/* Archive View */}
+      {activeTab === 'archive' && (
+        <InsightsArchive />
+      )}
 
-          {categories.length > 0 && (
-            <div className="filter-group">
-              <span className="filter-label">Domain:</span>
-              <div className="filter-buttons">
+      {/* Current Insights View */}
+      {activeTab === 'insights' && (
+        <>
+          {/* Category Filters */}
+          {allArticles.length > 0 && (
+            <div className="unified-filters">
+              <div className="filter-header-row">
+                {dateInfo?.updatedAsOf && (
+                  <div className="updated-label">
+                    Updated as of {dateInfo.updatedAsOf}
+                    <span className="refresh-schedule"> • Insights refresh daily at 8am EST</span>
+                  </div>
+                )}
                 <button
-                  className={`filter-btn ${selectedCategory === 'all' ? 'active' : ''}`}
-                  onClick={() => setSelectedCategory('all')}
+                  className="toggle-articles-btn"
+                  onClick={() => setShowAllArticles(!showAllArticles)}
                 >
-                  All ({allArticles.length})
+                  {showAllArticles ? 'Show Recent Only' : 'Show All Articles'}
                 </button>
-                {categories.map(category => {
-                  const count = allArticles.filter(a => a.category === category).length;
-                  return (
+              </div>
+
+              {categories.length > 0 && (
+                <div className="filter-group">
+                  <span className="filter-label">Domain:</span>
+                  <div className="filter-buttons">
                     <button
-                      key={category}
-                      className={`filter-btn ${selectedCategory === category ? 'active' : ''}`}
-                      onClick={() => setSelectedCategory(category)}
+                      className={`filter-btn ${selectedCategory === 'all' ? 'active' : ''}`}
+                      onClick={() => setSelectedCategory('all')}
                     >
-                      {formatCategoryName(category)} ({count})
+                      All ({allArticles.length})
                     </button>
-                  );
-                })}
+                    {categories.map(category => {
+                      const count = allArticles.filter(a => a.category === category).length;
+                      return (
+                        <button
+                          key={category}
+                          className={`filter-btn ${selectedCategory === category ? 'active' : ''}`}
+                          onClick={() => setSelectedCategory(category)}
+                        >
+                          {formatCategoryName(category)} ({count})
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {!loading && articles.length > 0 && (
+            <InsightsSummary
+              insights={selectedCategory === 'all'
+                ? { mortgage: insightsByCategory['mortgage'], productManagement: insightsByCategory['product-management'] }
+                : insightsByCategory[selectedCategory]
+              }
+              loading={insightsLoading}
+              error={insightsError}
+              multiDomain={selectedCategory === 'all'}
+            />
+          )}
+
+          {loading ? (
+            <div className="loading">
+              <div className="spinner"></div>
+              <p>Loading articles...</p>
+            </div>
+          ) : articles.length === 0 ? (
+            <div className="empty-state">
+              <h2>No articles found</h2>
+              <p>Try adjusting your filters. Articles are automatically refreshed daily at 8am EST.</p>
+            </div>
+          ) : (
+            <div className="articles-container">
+              {/* Compact source filter dropdown */}
+              <div className="source-filter-compact">
+                <label htmlFor="source-select" className="filter-label-inline">Source:</label>
+                <select
+                  id="source-select"
+                  className="source-select"
+                  value={filters.source || ''}
+                  onChange={(e) => setFilters({ ...filters, source: e.target.value })}
+                >
+                  <option value="">All Sources</option>
+                  {getSourcesForCategory().map(source => {
+                    const categoryArticles = selectedCategory === 'all'
+                      ? allArticles
+                      : allArticles.filter(a => a.category === selectedCategory);
+                    const count = categoryArticles.filter(a => a.source === source).length;
+                    return (
+                      <option key={source} value={source}>
+                        {source} ({count})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              <div className="articles-list">
+                {articles.map((article) => (
+                  <ArticleCard key={article.link} article={article} />
+                ))}
               </div>
             </div>
           )}
-        </div>
-      )}
-
-      {!loading && articles.length > 0 && (
-        <InsightsSummary
-          insights={selectedCategory === 'all'
-            ? { mortgage: insightsByCategory['mortgage'], productManagement: insightsByCategory['product-management'] }
-            : insightsByCategory[selectedCategory]
-          }
-          loading={insightsLoading}
-          error={insightsError}
-          multiDomain={selectedCategory === 'all'}
-        />
-      )}
-
-      {loading ? (
-        <div className="loading">
-          <div className="spinner"></div>
-          <p>Loading articles...</p>
-        </div>
-      ) : articles.length === 0 ? (
-        <div className="empty-state">
-          <h2>No articles found</h2>
-          <p>Try adjusting your filters. Articles are automatically refreshed daily at 8am EST.</p>
-        </div>
-      ) : (
-        <div className="articles-container">
-          {/* Compact source filter dropdown */}
-          <div className="source-filter-compact">
-            <label htmlFor="source-select" className="filter-label-inline">Source:</label>
-            <select
-              id="source-select"
-              className="source-select"
-              value={filters.source || ''}
-              onChange={(e) => setFilters({ ...filters, source: e.target.value })}
-            >
-              <option value="">All Sources</option>
-              {getSourcesForCategory().map(source => {
-                const categoryArticles = selectedCategory === 'all'
-                  ? allArticles
-                  : allArticles.filter(a => a.category === selectedCategory);
-                const count = categoryArticles.filter(a => a.source === source).length;
-                return (
-                  <option key={source} value={source}>
-                    {source} ({count})
-                  </option>
-                );
-              })}
-            </select>
-          </div>
-
-          <div className="articles-list">
-            {articles.map((article) => (
-              <ArticleCard key={article.link} article={article} />
-            ))}
-          </div>
-        </div>
+        </>
       )}
     </div>
   );

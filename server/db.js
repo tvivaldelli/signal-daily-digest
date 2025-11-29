@@ -40,6 +40,26 @@ async function initDB() {
       CREATE INDEX IF NOT EXISTS idx_saved_at ON articles(saved_at);
     `);
 
+    // Create insights_archive table for persistent insights storage
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS insights_archive (
+        id SERIAL PRIMARY KEY,
+        category VARCHAR(255) NOT NULL,
+        tldr JSONB,
+        recommended_actions JSONB,
+        themes JSONB,
+        article_count INTEGER,
+        date_range_start TIMESTAMP,
+        date_range_end TIMESTAMP,
+        generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_insights_category ON insights_archive(category);
+      CREATE INDEX IF NOT EXISTS idx_insights_generated_at ON insights_archive(generated_at DESC);
+    `);
+
     console.log('[DB] ✓ Database initialized');
   } catch (error) {
     console.error('[DB] Error initializing database:', error.message);
@@ -190,15 +210,23 @@ export async function cleanOldArticles() {
 let cachedInsightsData = {};
 
 /**
- * Save insights to cache
+ * Save insights to cache AND optionally persist to database archive
+ * @param {boolean} shouldArchive - Only archive if this is a newly generated insight (not from cache)
  */
-export async function saveInsights(insights, category = 'all') {
+export async function saveInsights(insights, category = 'all', dateRangeStart = null, dateRangeEnd = null, shouldArchive = true) {
   try {
+    // Update in-memory cache
     cachedInsightsData[category] = {
       ...insights,
       cachedAt: new Date().toISOString()
     };
     console.log(`[DB] ✓ Insights cached for category: ${category}`);
+
+    // Only persist to database archive if explicitly requested (new insights, not cached)
+    if (shouldArchive) {
+      await archiveInsights(insights, category, dateRangeStart, dateRangeEnd);
+    }
+
     return cachedInsightsData[category];
   } catch (error) {
     console.error('[DB] Error saving insights:', error.message);
@@ -207,18 +235,240 @@ export async function saveInsights(insights, category = 'all') {
 }
 
 /**
- * Get cached insights
+ * Archive insights to persistent database storage
+ * Prevents duplicate archives within a 1-hour window for the same category
+ * Skips archiving for 'all' category (only archive specific categories)
+ */
+export async function archiveInsights(insights, category, dateRangeStart = null, dateRangeEnd = null) {
+  try {
+    // Skip archiving 'all' category - only archive specific categories for richer insights
+    if (category === 'all') {
+      console.log(`[DB] Skipping archive for 'all' category - only specific categories are archived`);
+      return null;
+    }
+
+    // Check if we already have an archive for this category within the last hour
+    const recentCheck = await pool.query(
+      `SELECT id FROM insights_archive
+       WHERE category = $1 AND generated_at > NOW() - INTERVAL '1 hour'
+       ORDER BY generated_at DESC LIMIT 1`,
+      [category]
+    );
+
+    if (recentCheck.rows.length > 0) {
+      console.log(`[DB] Skipping archive - recent entry exists for ${category} (ID: ${recentCheck.rows[0].id})`);
+      return recentCheck.rows[0].id;
+    }
+
+    const result = await pool.query(
+      `INSERT INTO insights_archive
+       (category, tldr, recommended_actions, themes, article_count, date_range_start, date_range_end, generated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id`,
+      [
+        category,
+        JSON.stringify(insights.tldr || []),
+        JSON.stringify(insights.recommendedActions || []),
+        JSON.stringify(insights.themes || []),
+        insights.articleCount || 0,
+        dateRangeStart || new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(), // Default: 2 weeks ago
+        dateRangeEnd || new Date().toISOString(),
+        insights.generatedAt || new Date().toISOString()
+      ]
+    );
+
+    console.log(`[DB] ✓ Insights archived with ID: ${result.rows[0].id}`);
+    return result.rows[0].id;
+  } catch (error) {
+    console.error('[DB] Error archiving insights:', error.message);
+    return null;
+  }
+}
+
+/**
+ * Get cached insights (from memory first, then database)
+ * This provides persistent caching that survives server restarts
  */
 export async function getInsights(category = 'all') {
   try {
+    // First check in-memory cache
     if (cachedInsightsData[category]) {
-      console.log(`[DB] ✓ Returning cached insights for category: ${category}`);
+      console.log(`[DB] ✓ Returning in-memory cached insights for category: ${category}`);
       return cachedInsightsData[category];
     }
+
+    // If not in memory, check database for recent insights (within 24 hours)
+    // Skip 'all' category as we only archive specific categories
+    if (category !== 'all') {
+      const result = await pool.query(
+        `SELECT * FROM insights_archive
+         WHERE category = $1 AND generated_at > NOW() - INTERVAL '24 hours'
+         ORDER BY generated_at DESC LIMIT 1`,
+        [category]
+      );
+
+      if (result.rows.length > 0) {
+        const row = result.rows[0];
+        const insights = {
+          success: true,
+          tldr: row.tldr,
+          recommendedActions: row.recommended_actions,
+          themes: row.themes,
+          articleCount: row.article_count,
+          generatedAt: row.generated_at
+        };
+
+        // Populate in-memory cache for faster subsequent requests
+        cachedInsightsData[category] = {
+          ...insights,
+          cachedAt: new Date().toISOString()
+        };
+
+        console.log(`[DB] ✓ Restored insights from database for category: ${category} (generated ${row.generated_at})`);
+        return insights;
+      }
+    }
+
     return null;
   } catch (error) {
     console.error('[DB] Error getting insights:', error.message);
     return null;
+  }
+}
+
+/**
+ * Get archived insights history from database
+ * @param {Object} filters - { category, startDate, endDate, limit }
+ */
+export async function getArchivedInsights(filters = {}) {
+  try {
+    let query = 'SELECT * FROM insights_archive WHERE 1=1';
+    const params = [];
+    let paramIndex = 1;
+
+    if (filters.category) {
+      query += ` AND category = $${paramIndex}`;
+      params.push(filters.category);
+      paramIndex++;
+    }
+
+    if (filters.startDate) {
+      query += ` AND generated_at >= $${paramIndex}`;
+      params.push(new Date(filters.startDate).toISOString());
+      paramIndex++;
+    }
+
+    if (filters.endDate) {
+      query += ` AND generated_at <= $${paramIndex}`;
+      params.push(new Date(filters.endDate).toISOString());
+      paramIndex++;
+    }
+
+    query += ' ORDER BY generated_at DESC';
+
+    const limit = filters.limit || 50;
+    query += ` LIMIT $${paramIndex}`;
+    params.push(limit);
+
+    const result = await pool.query(query, params);
+
+    // Format results
+    const archives = result.rows.map(row => ({
+      id: row.id,
+      category: row.category,
+      tldr: row.tldr,
+      recommendedActions: row.recommended_actions,
+      themes: row.themes,
+      articleCount: row.article_count,
+      dateRangeStart: row.date_range_start,
+      dateRangeEnd: row.date_range_end,
+      generatedAt: row.generated_at
+    }));
+
+    console.log(`[DB] Retrieved ${archives.length} archived insights`);
+    return archives;
+  } catch (error) {
+    console.error('[DB] Error getting archived insights:', error.message);
+    return [];
+  }
+}
+
+/**
+ * Get a single archived insight by ID
+ */
+export async function getArchivedInsightById(id) {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM insights_archive WHERE id = $1',
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    const row = result.rows[0];
+    return {
+      id: row.id,
+      category: row.category,
+      tldr: row.tldr,
+      recommendedActions: row.recommended_actions,
+      themes: row.themes,
+      articleCount: row.article_count,
+      dateRangeStart: row.date_range_start,
+      dateRangeEnd: row.date_range_end,
+      generatedAt: row.generated_at,
+      success: true // Match the format expected by frontend
+    };
+  } catch (error) {
+    console.error('[DB] Error getting archived insight:', error.message);
+    return null;
+  }
+}
+
+/**
+ * Search archived insights by keyword
+ */
+export async function searchArchivedInsights(keyword, filters = {}) {
+  try {
+    let query = `
+      SELECT * FROM insights_archive
+      WHERE (
+        tldr::text ILIKE $1
+        OR recommended_actions::text ILIKE $1
+        OR themes::text ILIKE $1
+      )
+    `;
+    const params = [`%${keyword}%`];
+    let paramIndex = 2;
+
+    if (filters.category) {
+      query += ` AND category = $${paramIndex}`;
+      params.push(filters.category);
+      paramIndex++;
+    }
+
+    query += ' ORDER BY generated_at DESC LIMIT 50';
+
+    const result = await pool.query(query, params);
+
+    const archives = result.rows.map(row => ({
+      id: row.id,
+      category: row.category,
+      tldr: row.tldr,
+      recommendedActions: row.recommended_actions,
+      themes: row.themes,
+      articleCount: row.article_count,
+      dateRangeStart: row.date_range_start,
+      dateRangeEnd: row.date_range_end,
+      generatedAt: row.generated_at
+    }));
+
+    console.log(`[DB] Found ${archives.length} insights matching "${keyword}"`);
+    return archives;
+  } catch (error) {
+    console.error('[DB] Error searching archived insights:', error.message);
+    return [];
   }
 }
 
@@ -244,12 +494,16 @@ export async function clearInsights(category = null) {
 // Initialize database when module loads
 initDB();
 
-export default { 
-  saveArticle, 
-  getArticles, 
+export default {
+  saveArticle,
+  getArticles,
   getSources,
-  cleanOldArticles, 
+  cleanOldArticles,
   saveInsights,
   getInsights,
-  clearInsights 
+  clearInsights,
+  archiveInsights,
+  getArchivedInsights,
+  getArchivedInsightById,
+  searchArchivedInsights
 };

@@ -91,4 +91,62 @@ export async function generateInsights(articles, category = 'all') {
   }
 }
 
+/**
+ * Get archived insights history
+ * @param {Object} filters - { category, startDate, endDate, limit }
+ * @returns {Promise<Array>} - Array of archived insights
+ */
+export async function getArchivedInsights(filters = {}) {
+  try {
+    const params = new URLSearchParams();
+
+    if (filters.category) params.append('category', filters.category);
+    if (filters.startDate) params.append('startDate', filters.startDate);
+    if (filters.endDate) params.append('endDate', filters.endDate);
+    if (filters.limit) params.append('limit', filters.limit);
+
+    const response = await api.get(`/api/insights/archive?${params.toString()}`);
+    return response.data.archives;
+  } catch (error) {
+    console.error('Error fetching archived insights:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get a specific archived insight by ID
+ * @param {Number} id - Archive ID
+ * @returns {Promise<Object>} - Archived insight object
+ */
+export async function getArchivedInsightById(id) {
+  try {
+    const response = await api.get(`/api/insights/archive/${id}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching archived insight:', error);
+    throw error;
+  }
+}
+
+/**
+ * Search archived insights by keyword
+ * @param {String} query - Search keyword
+ * @param {Object} filters - { category }
+ * @returns {Promise<Array>} - Array of matching archived insights
+ */
+export async function searchArchivedInsights(query, filters = {}) {
+  try {
+    const params = new URLSearchParams();
+    params.append('q', query);
+
+    if (filters.category) params.append('category', filters.category);
+
+    const response = await api.get(`/api/insights/search?${params.toString()}`);
+    return response.data.results;
+  } catch (error) {
+    console.error('Error searching insights:', error);
+    throw error;
+  }
+}
+
 export default api;

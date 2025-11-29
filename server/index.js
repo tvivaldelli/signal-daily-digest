@@ -3,7 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { getArticles, getInsights, saveInsights, clearInsights } from './db.js';
+import { getArticles, getInsights, saveInsights, clearInsights, getArchivedInsights, getArchivedInsightById, searchArchivedInsights } from './db.js';
 import { fetchAllFeeds, getSources } from './rssFetcher.js';
 import { initScheduler } from './scheduler.js';
 import { generateInsights } from './insightsGenerator.js';
@@ -174,8 +174,13 @@ app.post('/api/insights', async (req, res) => {
 
     const insights = await generateInsights(articles);
 
-    // Cache the generated insights with category key
-    await saveInsights(insights, category);
+    // Calculate date range from articles
+    const dates = articles.map(a => new Date(a.pubDate)).filter(d => !isNaN(d));
+    const dateRangeStart = dates.length > 0 ? new Date(Math.min(...dates)).toISOString() : null;
+    const dateRangeEnd = dates.length > 0 ? new Date(Math.max(...dates)).toISOString() : null;
+
+    // Cache the generated insights with category key (also archives to database)
+    await saveInsights(insights, category, dateRangeStart, dateRangeEnd);
 
     res.json(insights);
   } catch (error) {
@@ -183,6 +188,113 @@ app.post('/api/insights', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to generate insights',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/insights/archive
+ * Get archived insights history
+ * Query params: category, startDate, endDate, limit
+ */
+app.get('/api/insights/archive', async (req, res) => {
+  try {
+    const filters = {
+      category: req.query.category,
+      startDate: req.query.startDate,
+      endDate: req.query.endDate,
+      limit: req.query.limit ? parseInt(req.query.limit) : 50
+    };
+
+    const archives = await getArchivedInsights(filters);
+
+    res.json({
+      success: true,
+      count: archives.length,
+      archives
+    });
+  } catch (error) {
+    console.error('Error fetching archived insights:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch archived insights',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/insights/archive/:id
+ * Get a specific archived insight by ID
+ */
+app.get('/api/insights/archive/:id', async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+
+    if (isNaN(id)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid ID',
+        message: 'Insight ID must be a number'
+      });
+    }
+
+    const insight = await getArchivedInsightById(id);
+
+    if (!insight) {
+      return res.status(404).json({
+        success: false,
+        error: 'Not found',
+        message: 'Archived insight not found'
+      });
+    }
+
+    res.json(insight);
+  } catch (error) {
+    console.error('Error fetching archived insight:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch archived insight',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/insights/search
+ * Search archived insights by keyword
+ * Query params: q (required), category
+ */
+app.get('/api/insights/search', async (req, res) => {
+  try {
+    const keyword = req.query.q;
+
+    if (!keyword) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing keyword',
+        message: 'Search query "q" is required'
+      });
+    }
+
+    const filters = {
+      category: req.query.category
+    };
+
+    const results = await searchArchivedInsights(keyword, filters);
+
+    res.json({
+      success: true,
+      query: keyword,
+      count: results.length,
+      results
+    });
+  } catch (error) {
+    console.error('Error searching insights:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to search insights',
       message: error.message
     });
   }
@@ -214,7 +326,10 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`   POST /api/refresh - Refresh articles`);
   console.log(`   GET  /api/sources - List sources`);
   console.log(`   GET  /api/categories - List categories`);
-  console.log(`   POST /api/insights - Generate AI insights\n`);
+  console.log(`   POST /api/insights - Generate AI insights`);
+  console.log(`   GET  /api/insights/archive - Browse archived insights`);
+  console.log(`   GET  /api/insights/archive/:id - Get specific archived insight`);
+  console.log(`   GET  /api/insights/search?q=keyword - Search archived insights\n`);
 
   // Initialize scheduler
   initScheduler();
