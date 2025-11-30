@@ -143,6 +143,16 @@
   min-width: 140px;
 }
 
+/* Show placeholder text when date is empty (mobile support) */
+.date-picker.empty:not(:focus) {
+  color: var(--text-secondary);
+}
+
+.date-picker.empty:not(:focus)::before {
+  content: "mm/dd/yyyy";
+  color: var(--text-secondary);
+}
+
 /* Make the entire date input open calendar on click */
 .date-picker::-webkit-calendar-picker-indicator {
   position: absolute;
@@ -375,7 +385,6 @@
   align-items: center;
   padding: 1rem 1.25rem;
   border-bottom: 1px solid rgba(14, 165, 233, 0.1);
-  cursor: pointer;
 }
 
 .archive-card-header-left {
@@ -430,7 +439,6 @@
 /* Card Body - TL;DR */
 .archive-card-body {
   padding: 1.25rem;
-  cursor: pointer;
 }
 
 .tldr-section {
@@ -467,6 +475,32 @@
   left: 0;
   color: #0ea5e9;
   font-weight: bold;
+}
+
+/* Expand/Collapse Button - below TL;DR */
+.expand-insights-btn {
+  display: block;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  margin-top: 1rem;
+  background: rgba(14, 165, 233, 0.1);
+  border: 1px solid rgba(14, 165, 233, 0.3);
+  border-radius: 8px;
+  color: #7dd3fc;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.expand-insights-btn:hover {
+  background: rgba(14, 165, 233, 0.2);
+  border-color: rgba(14, 165, 233, 0.5);
+}
+
+.archive-card.expanded .expand-insights-btn {
+  background: rgba(14, 165, 233, 0.15);
+  border-color: rgba(14, 165, 233, 0.4);
 }
 
 /* Stats Row */

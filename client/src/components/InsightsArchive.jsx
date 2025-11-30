@@ -170,8 +170,9 @@ export default function InsightsArchive() {
               type="date"
               value={dateFilter}
               onChange={(e) => setDateFilter(e.target.value)}
-              className="date-picker"
+              className={`date-picker ${!dateFilter ? 'empty' : ''}`}
               max={getTodayString()}
+              placeholder="mm/dd/yyyy"
             />
             {dateFilter && (
               <button className="clear-date" onClick={clearDateFilter}>
@@ -213,24 +214,17 @@ export default function InsightsArchive() {
                 className={`archive-card ${isExpanded ? 'expanded' : ''}`}
               >
                 {/* Card Header */}
-                <div
-                  className="archive-card-header"
-                  onClick={() => handleExpand(archive)}
-                >
+                <div className="archive-card-header">
                   <div className="archive-card-header-left">
                     <span className="archive-date-badge">{formatDate(archive.generatedAt)}</span>
                     <span className={`category-badge ${archive.category}`}>
                       {formatCategoryName(archive.category)}
                     </span>
                   </div>
-                  <span className="expand-icon">{isExpanded ? '▲' : '▼'}</span>
                 </div>
 
                 {/* Card Body - TL;DR (always visible) */}
-                <div
-                  className="archive-card-body"
-                  onClick={() => handleExpand(archive)}
-                >
+                <div className="archive-card-body">
                   {archive.tldr && archive.tldr.length > 0 && (
                     <div className="tldr-section">
                       <div className="tldr-label">TL;DR</div>
@@ -242,6 +236,13 @@ export default function InsightsArchive() {
                     </div>
                   )}
 
+                  {/* Expand button - below TL;DR */}
+                  <button
+                    className="expand-insights-btn"
+                    onClick={() => handleExpand(archive)}
+                  >
+                    {isExpanded ? '▲ Hide Full Insights' : '▼ View Full Insights'}
+                  </button>
                 </div>
 
                 {/* Expanded Detail Section */}
