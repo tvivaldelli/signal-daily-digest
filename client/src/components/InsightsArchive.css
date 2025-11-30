@@ -492,6 +492,10 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
+.expand-insights-btn.bottom {
+  margin-top: 1.5rem;
+}
+
 /* Stats Row */
 .archive-stats {
   display: flex;

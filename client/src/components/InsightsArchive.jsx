@@ -302,6 +302,14 @@ export default function InsightsArchive() {
                         </div>
                       </div>
                     )}
+
+                    {/* Bottom collapse button */}
+                    <button
+                      className="expand-insights-btn bottom"
+                      onClick={() => handleExpand(archive)}
+                    >
+                      ▲ Hide Full Insights
+                    </button>
                   </div>
                 )}
               </div>
