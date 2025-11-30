@@ -16,7 +16,6 @@ export default function Dashboard() {
   const [insightsError, setInsightsError] = useState(null);
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('all'); // 'all', 'mortgage', 'product-management'
-  const [showAllArticles, setShowAllArticles] = useState(false); // Toggle for 30-day filter
   const [activeTab, setActiveTab] = useState('insights'); // 'insights' or 'archive'
 
   // Load categories and articles on mount
@@ -29,7 +28,7 @@ export default function Dashboard() {
     if (allArticles.length > 0) {
       filterArticles();
     }
-  }, [filters, selectedCategory, allArticles, showAllArticles]);
+  }, [filters, selectedCategory, allArticles]);
 
   // Load categories from API
   async function loadCategoriesAndArticles() {
@@ -94,13 +93,11 @@ export default function Dashboard() {
   function filterArticles() {
     let filtered = [...allArticles];
 
-    // Apply 2-week filter by default (unless showing all articles) - matches insights window
-    if (!showAllArticles) {
-      const twoWeeksAgo = new Date();
-      twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
-      twoWeeksAgo.setHours(0, 0, 0, 0);
-      filtered = filtered.filter(a => new Date(a.pubDate) >= twoWeeksAgo);
-    }
+    // Apply 2-week filter by default - matches insights window
+    const twoWeeksAgo = new Date();
+    twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+    twoWeeksAgo.setHours(0, 0, 0, 0);
+    filtered = filtered.filter(a => new Date(a.pubDate) >= twoWeeksAgo);
 
     // Apply category filter
     if (selectedCategory && selectedCategory !== 'all') {
@@ -315,12 +312,6 @@ export default function Dashboard() {
                     <span className="refresh-schedule"> • Insights refresh daily at 8am EST</span>
                   </div>
                 )}
-                <button
-                  className="toggle-articles-btn"
-                  onClick={() => setShowAllArticles(!showAllArticles)}
-                >
-                  {showAllArticles ? 'Show Recent Only' : 'Show All Articles'}
-                </button>
               </div>
 
               {categories.length > 0 && (
