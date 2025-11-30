@@ -235,13 +235,15 @@ export default function InsightsArchive() {
                     </div>
                   )}
 
-                  {/* Expand button - below TL;DR */}
-                  <button
-                    className="expand-insights-btn"
-                    onClick={() => handleExpand(archive)}
-                  >
-                    {isExpanded ? '▲ Hide Full Insights' : '▼ View Full Insights'}
-                  </button>
+                  {/* Expand button - only show when collapsed */}
+                  {!isExpanded && (
+                    <button
+                      className="expand-insights-btn"
+                      onClick={() => handleExpand(archive)}
+                    >
+                      ▼ View Full Insights
+                    </button>
+                  )}
                 </div>
 
                 {/* Expanded Detail Section */}
