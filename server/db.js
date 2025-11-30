@@ -337,6 +337,78 @@ export async function getInsights(category = 'all') {
 }
 
 /**
+ * Check if we have fresh insights generated today (in EST timezone)
+ * Returns the insights if fresh, null if stale or missing
+ */
+export async function getTodaysInsights(category) {
+  try {
+    if (category === 'all') {
+      return null; // We don't cache 'all' category
+    }
+
+    // Check in-memory cache first
+    if (cachedInsightsData[category]) {
+      const cached = cachedInsightsData[category];
+      if (cached.generatedAt && isGeneratedToday(cached.generatedAt)) {
+        console.log(`[DB] ✓ Found today's insights in memory for: ${category}`);
+        return cached;
+      }
+    }
+
+    // Check database for insights generated today (EST timezone)
+    const result = await pool.query(
+      `SELECT * FROM insights_archive
+       WHERE category = $1
+       AND DATE(generated_at AT TIME ZONE 'America/New_York') = DATE(NOW() AT TIME ZONE 'America/New_York')
+       ORDER BY generated_at DESC LIMIT 1`,
+      [category]
+    );
+
+    if (result.rows.length > 0) {
+      const row = result.rows[0];
+      const insights = {
+        success: true,
+        tldr: row.tldr,
+        recommendedActions: row.recommended_actions,
+        themes: row.themes,
+        articleCount: row.article_count,
+        generatedAt: row.generated_at
+      };
+
+      // Populate in-memory cache
+      cachedInsightsData[category] = {
+        ...insights,
+        cachedAt: new Date().toISOString()
+      };
+
+      console.log(`[DB] ✓ Found today's insights in database for: ${category}`);
+      return insights;
+    }
+
+    console.log(`[DB] No insights found for today for category: ${category}`);
+    return null;
+  } catch (error) {
+    console.error('[DB] Error getting today\'s insights:', error.message);
+    return null;
+  }
+}
+
+/**
+ * Helper to check if a timestamp is from today (EST timezone)
+ */
+function isGeneratedToday(generatedAt) {
+  const generated = new Date(generatedAt);
+  const now = new Date();
+
+  // Convert both to EST for comparison
+  const estOptions = { timeZone: 'America/New_York' };
+  const generatedEST = generated.toLocaleDateString('en-US', estOptions);
+  const nowEST = now.toLocaleDateString('en-US', estOptions);
+
+  return generatedEST === nowEST;
+}
+
+/**
  * Get archived insights history from database
  * @param {Object} filters - { category, startDate, endDate, limit }
  */
@@ -501,6 +573,7 @@ export default {
   cleanOldArticles,
   saveInsights,
   getInsights,
+  getTodaysInsights,
   clearInsights,
   archiveInsights,
   getArchivedInsights,

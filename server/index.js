@@ -3,7 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { getArticles, getInsights, saveInsights, clearInsights, getArchivedInsights, getArchivedInsightById, searchArchivedInsights } from './db.js';
+import { getArticles, getInsights, getTodaysInsights, saveInsights, clearInsights, getArchivedInsights, getArchivedInsightById, searchArchivedInsights } from './db.js';
 import { fetchAllFeeds, getSources } from './rssFetcher.js';
 import { initScheduler } from './scheduler.js';
 import { generateInsights } from './insightsGenerator.js';
@@ -154,23 +154,16 @@ app.post('/api/insights', async (req, res) => {
       });
     }
 
-    // Check for cached insights for this specific category
-    const cachedInsights = await getInsights(category);
-    if (cachedInsights && cachedInsights.generatedAt) {
-      const generatedDate = new Date(cachedInsights.generatedAt);
-      const now = new Date();
-      const hoursSinceGeneration = (now - generatedDate) / (1000 * 60 * 60);
-
-      // Only regenerate if insights are older than 24 hours
-      if (hoursSinceGeneration < 24) {
-        console.log(`[API] Returning cached insights for category: ${category} (generated ${hoursSinceGeneration.toFixed(1)} hours ago)`);
-        return res.json(cachedInsights);
-      } else {
-        console.log(`[API] Cached insights are ${hoursSinceGeneration.toFixed(1)} hours old, regenerating...`);
-      }
+    // Check for insights generated TODAY (EST timezone)
+    // This ensures fresh insights even if server was asleep at 8am cron time
+    const todaysInsights = await getTodaysInsights(category);
+    if (todaysInsights) {
+      console.log(`[API] Returning today's cached insights for category: ${category}`);
+      return res.json(todaysInsights);
     }
 
-    console.log(`\n[API] Generating new insights for ${articles.length} articles (category: ${category})...`);
+    // No insights for today - generate fresh ones
+    console.log(`\n[API] No insights for today, generating new insights for ${articles.length} articles (category: ${category})...`);
 
     const insights = await generateInsights(articles);
 
