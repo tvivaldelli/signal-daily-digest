@@ -598,10 +598,57 @@ async function cleanupBlankInsights() {
   }
 }
 
+/**
+ * Deduplicate archive entries - keep only one entry per category per day (EST timezone)
+ * Keeps the most recent valid entry for each category/date combination
+ */
+async function deduplicateArchiveEntries() {
+  try {
+    // First, get the IDs we want to keep (most recent valid entry per category per day)
+    const keepResult = await pool.query(`
+      SELECT DISTINCT ON (category, DATE(generated_at AT TIME ZONE 'America/New_York'))
+             id
+      FROM insights_archive
+      WHERE themes IS NOT NULL
+        AND themes != '[]'::jsonb
+        AND jsonb_array_length(themes) > 0
+      ORDER BY category, DATE(generated_at AT TIME ZONE 'America/New_York'), generated_at DESC
+    `);
+
+    const idsToKeep = keepResult.rows.map(row => row.id);
+
+    if (idsToKeep.length === 0) {
+      console.log('[DB] No valid archive entries found to keep');
+      return;
+    }
+
+    // Delete all entries NOT in the keep list
+    const deleteResult = await pool.query(
+      `DELETE FROM insights_archive
+       WHERE id != ALL($1::int[])
+       RETURNING id, category, generated_at`,
+      [idsToKeep]
+    );
+
+    if (deleteResult.rowCount > 0) {
+      console.log(`[DB] ✓ Deduplicated archive: removed ${deleteResult.rowCount} duplicate entries`);
+      deleteResult.rows.forEach(row => {
+        console.log(`[DB]   - Removed duplicate ID ${row.id} (${row.category}, ${row.generated_at})`);
+      });
+    } else {
+      console.log('[DB] ✓ No duplicate archive entries found');
+    }
+  } catch (error) {
+    console.error('[DB] Error deduplicating archive entries:', error.message);
+  }
+}
+
 // Initialize database when module loads
-initDB().then(() => {
-  // Run one-time cleanup after DB is initialized
-  cleanupBlankInsights();
+initDB().then(async () => {
+  // Run cleanup after DB is initialized
+  await cleanupBlankInsights();
+  // Deduplicate to ensure only one entry per category per day
+  await deduplicateArchiveEntries();
 });
 
 export default {
