@@ -263,9 +263,32 @@ export async function archiveInsights(insights, category, dateRangeStart = null,
       [category]
     );
 
+    // Prepare the data
+    const tldr = JSON.stringify(insights.tldr || []);
+    const recommendedActions = JSON.stringify(insights.recommendedActions || []);
+    const themes = JSON.stringify(insights.themes || []);
+    const articleCount = insights.articleCount || 0;
+    const rangeStart = dateRangeStart || new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+    const rangeEnd = dateRangeEnd || new Date().toISOString();
+    const generatedAt = insights.generatedAt || new Date().toISOString();
+
     if (recentCheck.rows.length > 0) {
-      console.log(`[DB] Skipping archive - today's entry already exists for ${category} (ID: ${recentCheck.rows[0].id})`);
-      return recentCheck.rows[0].id;
+      // UPDATE existing entry instead of skipping (prevents race condition duplicates)
+      const existingId = recentCheck.rows[0].id;
+      await pool.query(
+        `UPDATE insights_archive SET
+           tldr = $1,
+           recommended_actions = $2,
+           themes = $3,
+           article_count = $4,
+           date_range_start = $5,
+           date_range_end = $6,
+           generated_at = $7
+         WHERE id = $8`,
+        [tldr, recommendedActions, themes, articleCount, rangeStart, rangeEnd, generatedAt, existingId]
+      );
+      console.log(`[DB] ✓ Updated existing archive for ${category} (ID: ${existingId})`);
+      return existingId;
     }
 
     const result = await pool.query(
@@ -273,16 +296,7 @@ export async function archiveInsights(insights, category, dateRangeStart = null,
        (category, tldr, recommended_actions, themes, article_count, date_range_start, date_range_end, generated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id`,
-      [
-        category,
-        JSON.stringify(insights.tldr || []),
-        JSON.stringify(insights.recommendedActions || []),
-        JSON.stringify(insights.themes || []),
-        insights.articleCount || 0,
-        dateRangeStart || new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(), // Default: 2 weeks ago
-        dateRangeEnd || new Date().toISOString(),
-        insights.generatedAt || new Date().toISOString()
-      ]
+      [category, tldr, recommendedActions, themes, articleCount, rangeStart, rangeEnd, generatedAt]
     );
 
     console.log(`[DB] ✓ Insights archived with ID: ${result.rows[0].id}`);
