@@ -236,8 +236,8 @@ export async function saveInsights(insights, category = 'all', dateRangeStart = 
 
 /**
  * Archive insights to persistent database storage
- * Prevents duplicate archives within a 1-hour window for the same category
- * Skips archiving for 'all' category (only archive specific categories)
+ * Prevents duplicate archives on the same day (EST timezone) for the same category
+ * Skips archiving for 'all' category and empty/failed insights
  */
 export async function archiveInsights(insights, category, dateRangeStart = null, dateRangeEnd = null) {
   try {
@@ -247,16 +247,24 @@ export async function archiveInsights(insights, category, dateRangeStart = null,
       return null;
     }
 
-    // Check if we already have an archive for this category within the last hour
+    // Skip archiving if insights are empty or failed
+    if (!insights.success || !insights.themes || insights.themes.length === 0) {
+      console.log(`[DB] Skipping archive - insights are empty or failed for ${category}`);
+      return null;
+    }
+
+    // Check if we already have an archive for this category TODAY (EST timezone)
+    // This prevents duplicates from scheduler + user visits on the same day
     const recentCheck = await pool.query(
       `SELECT id FROM insights_archive
-       WHERE category = $1 AND generated_at > NOW() - INTERVAL '1 hour'
+       WHERE category = $1
+       AND DATE(generated_at AT TIME ZONE 'America/New_York') = DATE(NOW() AT TIME ZONE 'America/New_York')
        ORDER BY generated_at DESC LIMIT 1`,
       [category]
     );
 
     if (recentCheck.rows.length > 0) {
-      console.log(`[DB] Skipping archive - recent entry exists for ${category} (ID: ${recentCheck.rows[0].id})`);
+      console.log(`[DB] Skipping archive - today's entry already exists for ${category} (ID: ${recentCheck.rows[0].id})`);
       return recentCheck.rows[0].id;
     }
 
@@ -563,8 +571,38 @@ export async function clearInsights(category = null) {
   }
 }
 
+/**
+ * Clean up blank/empty insights from archive (one-time maintenance)
+ */
+async function cleanupBlankInsights() {
+  try {
+    const result = await pool.query(
+      `DELETE FROM insights_archive
+       WHERE themes IS NULL
+          OR themes = '[]'::jsonb
+          OR themes = 'null'::jsonb
+          OR jsonb_array_length(themes) = 0
+          OR article_count = 0
+          OR article_count IS NULL
+       RETURNING id, category, generated_at`
+    );
+
+    if (result.rowCount > 0) {
+      console.log(`[DB] ✓ Cleaned up ${result.rowCount} blank/empty insight entries`);
+      result.rows.forEach(row => {
+        console.log(`[DB]   - Removed ID ${row.id} (${row.category}, ${row.generated_at})`);
+      });
+    }
+  } catch (error) {
+    console.error('[DB] Error cleaning up blank insights:', error.message);
+  }
+}
+
 // Initialize database when module loads
-initDB();
+initDB().then(() => {
+  // Run one-time cleanup after DB is initialized
+  cleanupBlankInsights();
+});
 
 export default {
   saveArticle,
