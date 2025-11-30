@@ -29,7 +29,8 @@
       "Bash(lsof:*)",
       "Bash(git commit:*)",
       "Bash(timeout 5 node:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(timeout 10 node:*)"
     ],
     "deny": [],
     "ask": []
