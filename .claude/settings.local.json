@@ -30,7 +30,8 @@
       "Bash(git commit:*)",
       "Bash(timeout 5 node:*)",
       "Bash(git add:*)",
-      "Bash(timeout 10 node:*)"
+      "Bash(timeout 10 node:*)",
+      "Bash(timeout 20 node:*)"
     ],
     "deny": [],
     "ask": []
