@@ -170,9 +170,8 @@ export default function InsightsArchive() {
               type="date"
               value={dateFilter}
               onChange={(e) => setDateFilter(e.target.value)}
-              className={`date-picker ${!dateFilter ? 'empty' : ''}`}
+              className="date-picker"
               max={getTodayString()}
-              placeholder="mm/dd/yyyy"
             />
             {dateFilter && (
               <button className="clear-date" onClick={clearDateFilter}>
