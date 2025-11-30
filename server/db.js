@@ -436,7 +436,9 @@ function isGeneratedToday(generatedAt) {
  */
 export async function getArchivedInsights(filters = {}) {
   try {
-    let query = 'SELECT * FROM insights_archive WHERE 1=1';
+    // Only show historical insights (before today in EST timezone)
+    let query = `SELECT * FROM insights_archive
+                 WHERE DATE(generated_at AT TIME ZONE 'America/New_York') < DATE(NOW() AT TIME ZONE 'America/New_York')`;
     const params = [];
     let paramIndex = 1;
 
