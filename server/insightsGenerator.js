@@ -4,6 +4,18 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY
 });
 
+// Timeout duration for Claude API calls (60 seconds)
+const API_TIMEOUT_MS = 60000;
+
+/**
+ * Create a timeout promise that rejects after specified milliseconds
+ */
+function createTimeout(ms) {
+  return new Promise((_, reject) => {
+    setTimeout(() => reject(new Error(`Claude API request timed out after ${ms / 1000} seconds`)), ms);
+  });
+}
+
 /**
  * Generate themed insights from a collection of articles
  * @param {Array} articles - Array of article objects with title, summary, link, source
@@ -40,7 +52,8 @@ export async function generateInsights(articles, category = null) {
 
     const prompt = getPromptForCategory(category, articleSummaries);
 
-    const message = await anthropic.messages.create({
+    // Call Claude API with timeout protection
+    const apiRequest = anthropic.messages.create({
       model: 'claude-sonnet-4-5-20250929',
       max_tokens: 8000, // Increased for more detailed insights
       messages: [{
@@ -48,6 +61,11 @@ export async function generateInsights(articles, category = null) {
         content: prompt
       }]
     });
+
+    const message = await Promise.race([
+      apiRequest,
+      createTimeout(API_TIMEOUT_MS)
+    ]);
 
     // Extract and parse Claude's response
     const responseText = message.content[0].text.trim();

@@ -45,6 +45,24 @@
   --shadow-3: 0px 3px 3px -2px rgba(0,0,0,0.2), 0px 3px 4px 0px rgba(0,0,0,0.14), 0px 1px 8px 0px rgba(0,0,0,0.12);
   --shadow-4: 0px 2px 4px -1px rgba(0,0,0,0.2), 0px 4px 5px 0px rgba(0,0,0,0.14), 0px 1px 10px 0px rgba(0,0,0,0.12);
 
+  /* Dark Panel Colors */
+  --panel-dark-1: rgba(15, 52, 96, 0.95);
+  --panel-dark-2: rgba(11, 35, 66, 0.98);
+  --panel-dark-3: rgba(6, 20, 40, 1);
+  --panel-accent-1: rgba(14, 165, 233, 0.12);
+  --panel-accent-2: rgba(6, 182, 212, 0.08);
+  --panel-border: rgba(14, 165, 233, 0.2);
+  --panel-text-muted: rgba(148, 206, 236, 0.8);
+
+  /* Dark Panel Gradients */
+  --gradient-dark-panel: linear-gradient(135deg, var(--panel-dark-1) 0%, var(--panel-dark-2) 50%, var(--panel-dark-3) 100%);
+  --gradient-panel-accent: radial-gradient(circle at 20% 50%, var(--panel-accent-1) 0%, transparent 50%),
+                           radial-gradient(circle at 80% 50%, var(--panel-accent-2) 0%, transparent 50%);
+  --gradient-scanlines: repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(14, 165, 233, 0.02) 2px, rgba(14, 165, 233, 0.02) 4px);
+
+  /* Dark Panel Shadows */
+  --shadow-dark-panel: 0 8px 32px rgba(6, 20, 40, 0.4), 0 2px 8px rgba(14, 165, 233, 0.2);
+
   /* Typography */
   font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Helvetica Neue', sans-serif;

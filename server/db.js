@@ -1,9 +1,12 @@
 import pkg from 'pg';
 const { Pool } = pkg;
 
-// Initialize database connection pool
+// Initialize database connection pool with explicit configuration
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL
+  connectionString: process.env.DATABASE_URL,
+  max: 10,                      // Maximum number of clients in the pool
+  idleTimeoutMillis: 30000,     // Close idle clients after 30 seconds
+  connectionTimeoutMillis: 5000 // Timeout acquiring a connection after 5 seconds
 });
 
 // Initialize database tables on startup
@@ -206,8 +209,80 @@ export async function cleanOldArticles() {
   }
 }
 
-// In-memory insights cache (keyed by category)
-let cachedInsightsData = {};
+// ============================================
+// LRU Cache Implementation
+// ============================================
+class LRUCache {
+  constructor(maxSize = 10, ttlMs = 24 * 60 * 60 * 1000) {
+    this.maxSize = maxSize;
+    this.ttlMs = ttlMs; // Default 24 hour TTL
+    this.cache = new Map();
+  }
+
+  get(key) {
+    if (!this.cache.has(key)) return null;
+
+    const entry = this.cache.get(key);
+
+    // Check TTL
+    if (Date.now() - entry.timestamp > this.ttlMs) {
+      this.cache.delete(key);
+      console.log(`[Cache] Entry expired for key: ${key}`);
+      return null;
+    }
+
+    // Move to end (most recently used)
+    this.cache.delete(key);
+    this.cache.set(key, entry);
+
+    return entry.value;
+  }
+
+  set(key, value) {
+    // Remove if exists (to update position)
+    if (this.cache.has(key)) {
+      this.cache.delete(key);
+    }
+
+    // Evict oldest if at capacity
+    if (this.cache.size >= this.maxSize) {
+      const oldestKey = this.cache.keys().next().value;
+      this.cache.delete(oldestKey);
+      console.log(`[Cache] Evicted oldest entry: ${oldestKey}`);
+    }
+
+    this.cache.set(key, {
+      value,
+      timestamp: Date.now()
+    });
+  }
+
+  delete(key) {
+    return this.cache.delete(key);
+  }
+
+  clear() {
+    this.cache.clear();
+  }
+
+  has(key) {
+    if (!this.cache.has(key)) return false;
+    const entry = this.cache.get(key);
+    // Check TTL
+    if (Date.now() - entry.timestamp > this.ttlMs) {
+      this.cache.delete(key);
+      return false;
+    }
+    return true;
+  }
+
+  size() {
+    return this.cache.size;
+  }
+}
+
+// In-memory insights cache with LRU eviction (max 10 entries, 24hr TTL)
+const insightsCache = new LRUCache(10, 24 * 60 * 60 * 1000);
 
 /**
  * Save insights to cache AND optionally persist to database archive
@@ -215,19 +290,19 @@ let cachedInsightsData = {};
  */
 export async function saveInsights(insights, category = 'all', dateRangeStart = null, dateRangeEnd = null, shouldArchive = true) {
   try {
-    // Update in-memory cache
-    cachedInsightsData[category] = {
+    // Update LRU cache
+    insightsCache.set(category, {
       ...insights,
       cachedAt: new Date().toISOString()
-    };
-    console.log(`[DB] ✓ Insights cached for category: ${category}`);
+    });
+    console.log(`[DB] ✓ Insights cached for category: ${category} (cache size: ${insightsCache.size()})`);
 
     // Only persist to database archive if explicitly requested (new insights, not cached)
     if (shouldArchive) {
       await archiveInsights(insights, category, dateRangeStart, dateRangeEnd);
     }
 
-    return cachedInsightsData[category];
+    return insightsCache.get(category);
   } catch (error) {
     console.error('[DB] Error saving insights:', error.message);
     return null;
@@ -313,10 +388,11 @@ export async function archiveInsights(insights, category, dateRangeStart = null,
  */
 export async function getInsights(category = 'all') {
   try {
-    // First check in-memory cache
-    if (cachedInsightsData[category]) {
-      console.log(`[DB] ✓ Returning in-memory cached insights for category: ${category}`);
-      return cachedInsightsData[category];
+    // First check LRU cache
+    const cached = insightsCache.get(category);
+    if (cached) {
+      console.log(`[DB] ✓ Returning LRU cached insights for category: ${category}`);
+      return cached;
     }
 
     // If not in memory, check database for recent insights (within 4 days for bi-weekly cadence)
@@ -340,11 +416,11 @@ export async function getInsights(category = 'all') {
           generatedAt: row.generated_at
         };
 
-        // Populate in-memory cache for faster subsequent requests
-        cachedInsightsData[category] = {
+        // Populate LRU cache for faster subsequent requests
+        insightsCache.set(category, {
           ...insights,
           cachedAt: new Date().toISOString()
-        };
+        });
 
         console.log(`[DB] ✓ Restored insights from database for category: ${category} (generated ${row.generated_at})`);
         return insights;
@@ -368,13 +444,11 @@ export async function getTodaysInsights(category) {
       return null; // We don't cache 'all' category
     }
 
-    // Check in-memory cache first
-    if (cachedInsightsData[category]) {
-      const cached = cachedInsightsData[category];
-      if (cached.generatedAt && isGeneratedRecently(cached.generatedAt)) {
-        console.log(`[DB] ✓ Found recent insights in memory for: ${category}`);
-        return cached;
-      }
+    // Check LRU cache first
+    const cached = insightsCache.get(category);
+    if (cached && cached.generatedAt && isGeneratedRecently(cached.generatedAt)) {
+      console.log(`[DB] ✓ Found recent insights in LRU cache for: ${category}`);
+      return cached;
     }
 
     // Check database for insights generated within recent window (3 days for bi-weekly cadence)
@@ -397,11 +471,11 @@ export async function getTodaysInsights(category) {
         generatedAt: row.generated_at
       };
 
-      // Populate in-memory cache
-      cachedInsightsData[category] = {
+      // Populate LRU cache
+      insightsCache.set(category, {
         ...insights,
         cachedAt: new Date().toISOString()
-      };
+      });
 
       console.log(`[DB] ✓ Found recent insights in database for: ${category}`);
       return insights;
@@ -572,10 +646,10 @@ export async function searchArchivedInsights(keyword, filters = {}) {
 export async function clearInsights(category = null) {
   try {
     if (category) {
-      delete cachedInsightsData[category];
+      insightsCache.delete(category);
       console.log(`[DB] ✓ Insights cache cleared for category: ${category}`);
     } else {
-      cachedInsightsData = {};
+      insightsCache.clear();
       console.log('[DB] ✓ All insights cache cleared');
     }
     return true;

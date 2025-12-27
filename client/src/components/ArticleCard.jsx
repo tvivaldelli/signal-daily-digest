@@ -1,7 +1,8 @@
+import { memo } from 'react';
 import { format, formatDistanceToNow } from 'date-fns';
 import './ArticleCard.css';
 
-export default function ArticleCard({ article }) {
+function ArticleCard({ article }) {
   const articleDate = new Date(article.pubDate);
   const now = new Date();
   const hoursSincePublished = (now - articleDate) / (1000 * 60 * 60);
@@ -93,3 +94,5 @@ export default function ArticleCard({ article }) {
     </div>
   );
 }
+
+export default memo(ArticleCard);

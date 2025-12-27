@@ -562,55 +562,6 @@
   margin-left: auto;
 }
 
-.refresh-btn:hover:not(:disabled) {
-  border-color: var(--secondary-dark);
-  background: var(--secondary-light);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-1);
-}
-
-.refresh-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-/* Filter Context */
-.filter-context {
-  background: #e3f2fd;
-  border-left: 4px solid #2196f3;
-  padding: var(--spacing-2) var(--spacing-3);
-  margin-bottom: var(--spacing-3);
-  border-radius: 8px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--spacing-2);
-}
-
-.context-text {
-  font-size: 0.9375rem;
-  color: #1565c0;
-}
-
-.clear-filters-btn {
-  background: #2196f3;
-  color: white;
-  border: none;
-  padding: 6px 14px;
-  border-radius: 16px;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.clear-filters-btn:hover {
-  background: #1976d2;
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-1);
-}
-
 /* Responsive */
 @media (max-width: 768px) {
   .intelligence-summary {

@@ -17,15 +17,97 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// ============================================
+// Rate Limiting Middleware
+// ============================================
+const rateLimitStore = new Map();
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+const RATE_LIMIT_MAX_REQUESTS = 100; // 100 requests per minute
+
+function rateLimit(req, res, next) {
+  const ip = req.ip || req.connection.remoteAddress || 'unknown';
+  const now = Date.now();
+
+  if (!rateLimitStore.has(ip)) {
+    rateLimitStore.set(ip, { count: 1, windowStart: now });
+    return next();
+  }
+
+  const record = rateLimitStore.get(ip);
+
+  // Reset window if expired
+  if (now - record.windowStart > RATE_LIMIT_WINDOW_MS) {
+    rateLimitStore.set(ip, { count: 1, windowStart: now });
+    return next();
+  }
+
+  record.count++;
+
+  if (record.count > RATE_LIMIT_MAX_REQUESTS) {
+    return res.status(429).json({
+      success: false,
+      error: 'Too many requests',
+      message: `Rate limit exceeded. Try again in ${Math.ceil((RATE_LIMIT_WINDOW_MS - (now - record.windowStart)) / 1000)} seconds.`
+    });
+  }
+
+  next();
+}
+
+// Clean up old rate limit entries every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, record] of rateLimitStore.entries()) {
+    if (now - record.windowStart > RATE_LIMIT_WINDOW_MS * 2) {
+      rateLimitStore.delete(ip);
+    }
+  }
+}, 5 * 60 * 1000);
+
+// ============================================
+// Input Validation Helpers
+// ============================================
+function sanitizeString(str, maxLength = 500) {
+  if (typeof str !== 'string') return '';
+  return str.trim().substring(0, maxLength);
+}
+
+function isValidDate(dateStr) {
+  if (!dateStr) return true; // Optional dates are valid
+  const date = new Date(dateStr);
+  return !isNaN(date.getTime());
+}
+
+function isValidCategory(category) {
+  if (!category) return true; // Optional
+  const validCategories = ['mortgage', 'product-management', 'competitor-intel', 'all'];
+  return validCategories.includes(category);
+}
+
+// ============================================
 // Middleware
+// ============================================
 app.use(cors({
   origin: true, // Allow all origins in development
   credentials: true
 }));
-app.use(express.json());
+app.use(express.json({ limit: '1mb' })); // Limit request body size
+app.use(rateLimit); // Apply rate limiting to all routes
+
+// ============================================
+// Cache Control Helpers
+// ============================================
+function setCacheHeaders(res, maxAge = 300, staleWhileRevalidate = 60) {
+  res.set('Cache-Control', `public, max-age=${maxAge}, stale-while-revalidate=${staleWhileRevalidate}`);
+}
+
+function setNoCacheHeaders(res) {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+}
 
 // Health check endpoint
 app.get('/health', (req, res) => {
+  setNoCacheHeaders(res);
   res.json({ status: 'ok', message: 'Mortgage News Monitor API is running' });
 });
 
@@ -36,15 +118,35 @@ app.get('/health', (req, res) => {
  */
 app.get('/api/articles', async (req, res) => {
   try {
+    // Validate inputs
+    if (!isValidCategory(req.query.category)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid category',
+        message: 'Category must be one of: mortgage, product-management, competitor-intel, all'
+      });
+    }
+
+    if (!isValidDate(req.query.startDate) || !isValidDate(req.query.endDate)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid date format',
+        message: 'Dates must be valid ISO date strings'
+      });
+    }
+
     const filters = {
-      category: req.query.category,
-      source: req.query.source,
+      category: sanitizeString(req.query.category, 50),
+      source: sanitizeString(req.query.source, 100),
       startDate: req.query.startDate,
       endDate: req.query.endDate,
-      keyword: req.query.keyword
+      keyword: sanitizeString(req.query.keyword, 100)
     };
 
     const articles = await getArticles(filters);
+
+    // Cache for 5 minutes (articles don't change frequently)
+    setCacheHeaders(res, 300, 60);
 
     res.json({
       success: true,
@@ -98,6 +200,9 @@ app.get('/api/sources', async (req, res) => {
   try {
     const sources = await getSources();
 
+    // Cache for 1 hour (sources rarely change)
+    setCacheHeaders(res, 3600, 300);
+
     res.json({
       success: true,
       count: sources.length,
@@ -121,6 +226,9 @@ app.get('/api/categories', async (req, res) => {
   try {
     const sources = await getSources();
     const categories = [...new Set(sources.map(s => s.category).filter(Boolean))];
+
+    // Cache for 1 hour (categories rarely change)
+    setCacheHeaders(res, 3600, 300);
 
     res.json({
       success: true,
@@ -202,6 +310,9 @@ app.get('/api/insights/archive', async (req, res) => {
 
     const archives = await getArchivedInsights(filters);
 
+    // Cache for 10 minutes (archives are historical, change infrequently)
+    setCacheHeaders(res, 600, 120);
+
     res.json({
       success: true,
       count: archives.length,
@@ -243,6 +354,9 @@ app.get('/api/insights/archive/:id', async (req, res) => {
       });
     }
 
+    // Cache for 1 hour (archived insights are immutable)
+    setCacheHeaders(res, 3600, 300);
+
     res.json(insight);
   } catch (error) {
     console.error('Error fetching archived insight:', error);
@@ -276,6 +390,9 @@ app.get('/api/insights/search', async (req, res) => {
     };
 
     const results = await searchArchivedInsights(keyword, filters);
+
+    // Cache search results for 5 minutes
+    setCacheHeaders(res, 300, 60);
 
     res.json({
       success: true,

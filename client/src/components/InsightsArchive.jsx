@@ -1,12 +1,7 @@
 import { useState, useEffect } from 'react';
 import { getArchivedInsights, getArchivedInsightById } from '../services/api';
+import { formatDateTime, formatCategoryName, getTodayString } from '../utils/formatting';
 import './InsightsArchive.css';
-
-// Get today's date in YYYY-MM-DD format
-function getTodayString() {
-  const today = new Date();
-  return today.toISOString().split('T')[0];
-}
 
 export default function InsightsArchive() {
   const [archives, setArchives] = useState([]);
@@ -96,37 +91,6 @@ export default function InsightsArchive() {
       console.error('Error loading insight detail:', err);
     }
   }
-
-  function formatDate(dateString) {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit'
-    });
-  }
-
-  function formatCategoryName(category) {
-    return category.split('-').map(word =>
-      word.charAt(0).toUpperCase() + word.slice(1)
-    ).join(' ');
-  }
-
-  function getTimeAgo(dateString) {
-    const now = new Date();
-    const date = new Date(dateString);
-    const diffMs = now - date;
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-    if (diffDays === 0) return 'Today';
-    if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays} days ago`;
-    if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
-    return `${Math.floor(diffDays / 30)} months ago`;
-  }
-
 
   return (
     <div className="insights-archive">
@@ -222,7 +186,7 @@ export default function InsightsArchive() {
                 {/* Card Header */}
                 <div className="archive-card-header">
                   <div className="archive-card-header-left">
-                    <span className="archive-date-badge">{formatDate(archive.generatedAt)}</span>
+                    <span className="archive-date-badge">{formatDateTime(archive.generatedAt)}</span>
                     <span className={`category-badge ${archive.category}`}>
                       {formatCategoryName(archive.category)}
                     </span>

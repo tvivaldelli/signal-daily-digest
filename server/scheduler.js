@@ -4,6 +4,23 @@ import { cleanOldArticles, getArticles, saveInsights } from './db.js';
 import { generateInsights } from './insightsGenerator.js';
 
 /**
+ * Generate and save insights for a single category
+ */
+async function generateCategoryInsights(articles, category, displayName) {
+  const categoryArticles = articles.filter(a => a.category === category);
+  if (categoryArticles.length === 0) {
+    console.log(`[Scheduler] No articles for ${displayName}, skipping`);
+    return null;
+  }
+
+  console.log(`[Scheduler] Generating insights for ${displayName} (${categoryArticles.length} articles)...`);
+  const insights = await generateInsights(categoryArticles, category);
+  await saveInsights(insights, category);
+  console.log(`[Scheduler] ${displayName} insights cached`);
+  return insights;
+}
+
+/**
  * Fetch and cache articles and insights
  */
 async function fetchAndCacheContent() {
@@ -13,38 +30,21 @@ async function fetchAndCacheContent() {
     console.log('[Scheduler] Fetch completed successfully');
 
     // Pre-generate insights for each category
-    console.log('[Scheduler] Pre-generating insights by category...');
+    console.log('[Scheduler] Pre-generating insights by category (parallel)...');
     const articles = await getArticles({});
 
     if (articles && articles.length > 0) {
-      // Generate insights for mortgage category
-      const mortgageArticles = articles.filter(a => a.category === 'mortgage');
-      if (mortgageArticles.length > 0) {
-        console.log(`[Scheduler] Generating insights for mortgage (${mortgageArticles.length} articles)...`);
-        const mortgageInsights = await generateInsights(mortgageArticles, 'mortgage');
-        await saveInsights(mortgageInsights, 'mortgage');
-        console.log('[Scheduler] Mortgage insights cached');
-      }
+      const startTime = Date.now();
 
-      // Generate insights for product-management category
-      const pmArticles = articles.filter(a => a.category === 'product-management');
-      if (pmArticles.length > 0) {
-        console.log(`[Scheduler] Generating insights for product-management (${pmArticles.length} articles)...`);
-        const pmInsights = await generateInsights(pmArticles, 'product-management');
-        await saveInsights(pmInsights, 'product-management');
-        console.log('[Scheduler] Product Management insights cached');
-      }
+      // Generate insights for all categories in parallel
+      await Promise.all([
+        generateCategoryInsights(articles, 'mortgage', 'Mortgage'),
+        generateCategoryInsights(articles, 'product-management', 'Product Management'),
+        generateCategoryInsights(articles, 'competitor-intel', 'Competitor Intel')
+      ]);
 
-      // Generate insights for competitor-intel category
-      const competitorArticles = articles.filter(a => a.category === 'competitor-intel');
-      if (competitorArticles.length > 0) {
-        console.log(`[Scheduler] Generating insights for competitor-intel (${competitorArticles.length} articles)...`);
-        const competitorInsights = await generateInsights(competitorArticles, 'competitor-intel');
-        await saveInsights(competitorInsights, 'competitor-intel');
-        console.log('[Scheduler] Competitor Intel insights cached');
-      }
-
-      console.log('[Scheduler] All insights pre-generated and cached successfully');
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      console.log(`[Scheduler] All insights pre-generated and cached successfully in ${elapsed}s`);
     }
   } catch (error) {
     console.error('[Scheduler] Error during fetch:', error);

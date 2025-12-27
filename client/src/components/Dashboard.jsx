@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { getArticles, generateInsights, getCategories } from '../services/api';
 import ArticleCard from './ArticleCard';
 import InsightsSummary from './InsightsSummary';
 import InsightsArchive from './InsightsArchive';
+import { getTimeAgo, formatDate, formatFullDate, formatCategoryName } from '../utils/formatting';
 import './Dashboard.css';
 
 export default function Dashboard() {
@@ -17,6 +18,9 @@ export default function Dashboard() {
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('all'); // 'all', 'mortgage', 'product-management'
   const [activeTab, setActiveTab] = useState('insights'); // 'insights' or 'archive'
+
+  // Request ID ref to prevent race conditions when switching categories rapidly
+  const insightsRequestIdRef = useRef(0);
 
   // Load categories and articles on mount
   useEffect(() => {
@@ -54,7 +58,8 @@ export default function Dashboard() {
 
       // Generate insights in the background (non-blocking)
       if (data && data.length > 0) {
-        loadInsightsForCategory(data, 'all'); // No await - runs in background
+        insightsRequestIdRef.current += 1;
+        loadInsightsForCategory(data, 'all', insightsRequestIdRef.current); // No await - runs in background
       }
     } catch (err) {
       setError('Failed to load articles. Please try again.');
@@ -66,26 +71,30 @@ export default function Dashboard() {
   // Regenerate insights when category changes
   useEffect(() => {
     if (allArticles.length > 0 && selectedCategory) {
+      // Increment request ID to invalidate any pending requests (prevents race conditions)
+      insightsRequestIdRef.current += 1;
+      const currentRequestId = insightsRequestIdRef.current;
+
       if (selectedCategory === 'all') {
         // Load insights for both mortgage and product-management
         const mortgageArticles = allArticles.filter(a => a.category === 'mortgage');
         const pmArticles = allArticles.filter(a => a.category === 'product-management');
 
         if (mortgageArticles.length > 0) {
-          loadInsightsForCategory(mortgageArticles, 'mortgage');
+          loadInsightsForCategory(mortgageArticles, 'mortgage', currentRequestId);
         }
         if (pmArticles.length > 0) {
-          loadInsightsForCategory(pmArticles, 'product-management');
+          loadInsightsForCategory(pmArticles, 'product-management', currentRequestId);
         }
         const competitorArticles = allArticles.filter(a => a.category === 'competitor-intel');
         if (competitorArticles.length > 0) {
-          loadInsightsForCategory(competitorArticles, 'competitor-intel');
+          loadInsightsForCategory(competitorArticles, 'competitor-intel', currentRequestId);
         }
       } else {
         // Load insights for single category
         const categoryArticles = allArticles.filter(a => a.category === selectedCategory);
         if (categoryArticles.length > 0) {
-          loadInsightsForCategory(categoryArticles, selectedCategory);
+          loadInsightsForCategory(categoryArticles, selectedCategory, currentRequestId);
         } else {
           setInsightsError(null);
         }
@@ -141,7 +150,7 @@ export default function Dashboard() {
     setArticles(filtered);
   }
 
-  async function loadInsightsForCategory(articlesData, category) {
+  async function loadInsightsForCategory(articlesData, category, requestId) {
     // Check if we already have cached insights for this category
     if (insightsByCategory[category]) {
       console.log(`Using cached insights for category: ${category}`);
@@ -167,16 +176,26 @@ export default function Dashboard() {
       console.log(`Generating insights for category: ${category} (${recentArticles.length} articles from last 2 weeks)`);
       const insightsData = await generateInsights(recentArticles, category);
 
-      // Cache the insights by category
-      setInsightsByCategory(prev => ({
-        ...prev,
-        [category]: insightsData
-      }));
+      // Only update state if this request is still current (prevents race conditions)
+      if (requestId === insightsRequestIdRef.current) {
+        setInsightsByCategory(prev => ({
+          ...prev,
+          [category]: insightsData
+        }));
+      } else {
+        console.log(`Discarding stale insights response for ${category} (request ${requestId} < current ${insightsRequestIdRef.current})`);
+      }
     } catch (err) {
-      setInsightsError('Unable to generate insights at this time.');
+      // Only update error state if this request is still current
+      if (requestId === insightsRequestIdRef.current) {
+        setInsightsError('Unable to generate insights at this time.');
+      }
       console.error('Error generating insights:', err);
     } finally {
-      setInsightsLoading(false);
+      // Only update loading state if this request is still current
+      if (requestId === insightsRequestIdRef.current) {
+        setInsightsLoading(false);
+      }
     }
   }
 
@@ -211,55 +230,22 @@ export default function Dashboard() {
     const oldestDate = dates[0];
     const newestDate = dates[dates.length - 1];
 
-    // Format date range
-    const formatDate = (date) => {
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    };
-
     const dateRange = oldestDate.toDateString() === newestDate.toDateString()
-      ? formatDate(newestDate)
-      : `${formatDate(oldestDate)} - ${formatDate(newestDate)}`;
+      ? formatDate(newestDate.toISOString())
+      : `${formatDate(oldestDate.toISOString())} - ${formatDate(newestDate.toISOString())}`;
 
-    // Format newest date as "Month Day, Year" for "Updated as of"
-    const updatedAsOf = newestDate.toLocaleDateString('en-US', {
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric'
-    });
+    const updatedAsOf = formatFullDate(newestDate.toISOString());
 
-    // Calculate time ago for insights
-    let insightsAge = '';
+    // Calculate time ago for insights using shared util
     const currentInsights = insightsByCategory[selectedCategory];
-    if (currentInsights?.generatedAt) {
-      const now = new Date();
-      const generated = new Date(currentInsights.generatedAt);
-      const diffMs = now - generated;
-      const diffMins = Math.floor(diffMs / 60000);
-      const diffHours = Math.floor(diffMins / 60);
-      const diffDays = Math.floor(diffHours / 24);
-
-      if (diffDays > 0) {
-        insightsAge = `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
-      } else if (diffHours > 0) {
-        insightsAge = `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-      } else if (diffMins > 0) {
-        insightsAge = `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
-      } else {
-        insightsAge = 'just now';
-      }
-    }
+    const insightsAge = currentInsights?.generatedAt
+      ? getTimeAgo(currentInsights.generatedAt)
+      : '';
 
     return { dateRange, insightsAge, updatedAsOf };
   }
 
   const dateInfo = getDateInfo();
-
-  // Format category name for display
-  function formatCategoryName(category) {
-    return category.split('-').map(word =>
-      word.charAt(0).toUpperCase() + word.slice(1)
-    ).join(' ');
-  }
 
   return (
     <div className="dashboard">
@@ -275,16 +261,24 @@ export default function Dashboard() {
           <p className="subtitle">Real-time insights for product leaders • Powered by AI</p>
 
           {/* Main navigation tabs */}
-          <div className="main-tabs">
+          <div className="main-tabs" role="tablist" aria-label="Insights navigation">
             <button
               className={`main-tab ${activeTab === 'insights' ? 'active' : ''}`}
               onClick={() => setActiveTab('insights')}
+              role="tab"
+              aria-selected={activeTab === 'insights'}
+              aria-controls="insights-panel"
+              id="insights-tab"
             >
               Current Insights
             </button>
             <button
               className={`main-tab ${activeTab === 'archive' ? 'active' : ''}`}
               onClick={() => setActiveTab('archive')}
+              role="tab"
+              aria-selected={activeTab === 'archive'}
+              aria-controls="archive-panel"
+              id="archive-tab"
             >
               Insights Archive
             </button>
@@ -300,12 +294,14 @@ export default function Dashboard() {
 
       {/* Archive View */}
       {activeTab === 'archive' && (
-        <InsightsArchive />
+        <div role="tabpanel" id="archive-panel" aria-labelledby="archive-tab">
+          <InsightsArchive />
+        </div>
       )}
 
       {/* Current Insights View */}
       {activeTab === 'insights' && (
-        <>
+        <div role="tabpanel" id="insights-panel" aria-labelledby="insights-tab">
           {/* Category Filters */}
           {allArticles.length > 0 && (
             <div className="unified-filters">
@@ -319,12 +315,14 @@ export default function Dashboard() {
               </div>
 
               {categories.length > 0 && (
-                <div className="filter-group">
-                  <span className="filter-label">Domain:</span>
-                  <div className="filter-buttons">
+                <div className="filter-group" role="group" aria-label="Filter by domain">
+                  <span className="filter-label" id="domain-filter-label">Domain:</span>
+                  <div className="filter-buttons" role="radiogroup" aria-labelledby="domain-filter-label">
                     <button
                       className={`filter-btn ${selectedCategory === 'all' ? 'active' : ''}`}
                       onClick={() => setSelectedCategory('all')}
+                      role="radio"
+                      aria-checked={selectedCategory === 'all'}
                     >
                       All ({allArticles.length})
                     </button>
@@ -335,6 +333,8 @@ export default function Dashboard() {
                           key={category}
                           className={`filter-btn ${selectedCategory === category ? 'active' : ''}`}
                           onClick={() => setSelectedCategory(category)}
+                          role="radio"
+                          aria-checked={selectedCategory === category}
                         >
                           {formatCategoryName(category)} ({count})
                         </button>
@@ -401,7 +401,7 @@ export default function Dashboard() {
               </div>
             </div>
           )}
-        </>
+        </div>
       )}
     </div>
   );
