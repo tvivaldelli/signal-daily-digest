@@ -56,7 +56,11 @@ export default function InsightsSummary({ insights, loading, error, multiDomain 
   // Handle multi-domain view - show tabs to cycle between domains
   if (multiDomain && insights?.mortgage && insights?.productManagement) {
     // Use the active domain's insights
-    const currentInsights = activeDomain === 'mortgage' ? insights.mortgage : insights.productManagement;
+    const currentInsights = activeDomain === 'mortgage'
+      ? insights.mortgage
+      : activeDomain === 'productManagement'
+        ? insights.productManagement
+        : insights.competitorIntel;
 
     if (!currentInsights || !currentInsights.success) {
       return null;
@@ -102,6 +106,18 @@ export default function InsightsSummary({ insights, loading, error, multiDomain 
               >
                 📊 Product Management
               </button>
+              {insights.competitorIntel && (
+                <button
+                  className={`domain-tab ${activeDomain === 'competitorIntel' ? 'active' : ''}`}
+                  onClick={() => {
+                    setActiveDomain('competitorIntel');
+                    setCurrentSlide(0);
+                    setIsExpanded(false);
+                  }}
+                >
+                  🎯 Competitor Intel
+                </button>
+              )}
             </div>
           </div>
         </div>

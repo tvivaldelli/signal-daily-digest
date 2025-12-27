@@ -77,6 +77,10 @@ export default function Dashboard() {
         if (pmArticles.length > 0) {
           loadInsightsForCategory(pmArticles, 'product-management');
         }
+        const competitorArticles = allArticles.filter(a => a.category === 'competitor-intel');
+        if (competitorArticles.length > 0) {
+          loadInsightsForCategory(competitorArticles, 'competitor-intel');
+        }
       } else {
         // Load insights for single category
         const categoryArticles = allArticles.filter(a => a.category === selectedCategory);
@@ -309,7 +313,7 @@ export default function Dashboard() {
                 {dateInfo?.updatedAsOf && (
                   <div className="updated-label">
                     Updated as of {dateInfo.updatedAsOf}
-                    <span className="refresh-schedule"> • Insights refresh daily at 8am EST</span>
+                    <span className="refresh-schedule"> • Insights refresh Mon & Thu at 8am EST</span>
                   </div>
                 )}
               </div>
@@ -345,7 +349,7 @@ export default function Dashboard() {
           {!loading && articles.length > 0 && (
             <InsightsSummary
               insights={selectedCategory === 'all'
-                ? { mortgage: insightsByCategory['mortgage'], productManagement: insightsByCategory['product-management'] }
+                ? { mortgage: insightsByCategory['mortgage'], productManagement: insightsByCategory['product-management'], competitorIntel: insightsByCategory['competitor-intel'] }
                 : insightsByCategory[selectedCategory]
               }
               loading={insightsLoading}
