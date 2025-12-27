@@ -21,7 +21,7 @@ async function fetchAndCacheContent() {
       const mortgageArticles = articles.filter(a => a.category === 'mortgage');
       if (mortgageArticles.length > 0) {
         console.log(`[Scheduler] Generating insights for mortgage (${mortgageArticles.length} articles)...`);
-        const mortgageInsights = await generateInsights(mortgageArticles);
+        const mortgageInsights = await generateInsights(mortgageArticles, 'mortgage');
         await saveInsights(mortgageInsights, 'mortgage');
         console.log('[Scheduler] Mortgage insights cached');
       }
@@ -30,9 +30,18 @@ async function fetchAndCacheContent() {
       const pmArticles = articles.filter(a => a.category === 'product-management');
       if (pmArticles.length > 0) {
         console.log(`[Scheduler] Generating insights for product-management (${pmArticles.length} articles)...`);
-        const pmInsights = await generateInsights(pmArticles);
+        const pmInsights = await generateInsights(pmArticles, 'product-management');
         await saveInsights(pmInsights, 'product-management');
         console.log('[Scheduler] Product Management insights cached');
+      }
+
+      // Generate insights for competitor-intel category
+      const competitorArticles = articles.filter(a => a.category === 'competitor-intel');
+      if (competitorArticles.length > 0) {
+        console.log(`[Scheduler] Generating insights for competitor-intel (${competitorArticles.length} articles)...`);
+        const competitorInsights = await generateInsights(competitorArticles, 'competitor-intel');
+        await saveInsights(competitorInsights, 'competitor-intel');
+        console.log('[Scheduler] Competitor Intel insights cached');
       }
 
       console.log('[Scheduler] All insights pre-generated and cached successfully');
@@ -50,9 +59,9 @@ export function initScheduler() {
   console.log('[Scheduler] Performing initial fetch on startup...');
   fetchAndCacheContent();
 
-  // Fetch news daily at 8 AM
-  cron.schedule('0 8 * * *', async () => {
-    console.log('\n[Scheduler] Running daily news fetch at 8 AM...');
+  // Fetch news twice weekly: Monday and Thursday at 8 AM EST
+  cron.schedule('0 8 * * 1,4', async () => {
+    console.log('\n[Scheduler] Running bi-weekly news fetch (Mon/Thu 8 AM)...');
     await fetchAndCacheContent();
   }, {
     timezone: 'America/New_York'
@@ -72,6 +81,6 @@ export function initScheduler() {
   });
 
   console.log('✓ Scheduler initialized');
-  console.log('  - Daily fetch: 8:00 AM EST');
+  console.log('  - Bi-weekly fetch: Monday & Thursday 8:00 AM EST');
   console.log('  - Weekly cleanup: Sunday 12:00 AM EST\n');
 }

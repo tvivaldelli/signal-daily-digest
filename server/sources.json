@@ -65,6 +65,42 @@
       "category": "product-management",
       "url": "https://www.youtube.com/@SupraInsider",
       "rss": "https://www.youtube.com/feeds/videos.xml?channel_id=UCfAxlqJfB6AwqFtbmxPUELQ"
+    },
+    {
+      "name": "Finovate",
+      "category": "competitor-intel",
+      "url": "https://finovate.com/",
+      "rss": "https://finovate.com/feed/"
+    },
+    {
+      "name": "TechCrunch Fintech",
+      "category": "competitor-intel",
+      "url": "https://techcrunch.com/tag/fintech/",
+      "rss": "https://techcrunch.com/tag/fintech/feed/"
+    },
+    {
+      "name": "Crunchbase News",
+      "category": "competitor-intel",
+      "url": "https://news.crunchbase.com/",
+      "rss": "https://news.crunchbase.com/feed/"
+    },
+    {
+      "name": "Rocket Companies (SA)",
+      "category": "competitor-intel",
+      "url": "https://seekingalpha.com/symbol/RKT",
+      "rss": "https://seekingalpha.com/api/sa/combined/RKT.xml"
+    },
+    {
+      "name": "UWM Holdings (SA)",
+      "category": "competitor-intel",
+      "url": "https://seekingalpha.com/symbol/UWMC",
+      "rss": "https://seekingalpha.com/api/sa/combined/UWMC.xml"
+    },
+    {
+      "name": "loanDepot (SA)",
+      "category": "competitor-intel",
+      "url": "https://seekingalpha.com/symbol/LDI",
+      "rss": "https://seekingalpha.com/api/sa/combined/LDI.xml"
     }
   ]
 }

@@ -253,12 +253,12 @@ export async function archiveInsights(insights, category, dateRangeStart = null,
       return null;
     }
 
-    // Check if we already have an archive for this category TODAY (EST timezone)
-    // This prevents duplicates from scheduler + user visits on the same day
+    // Check if we already have an archive for this category within the last 3 days
+    // This prevents duplicates within the Mon-Thu bi-weekly window
     const recentCheck = await pool.query(
       `SELECT id FROM insights_archive
        WHERE category = $1
-       AND DATE(generated_at AT TIME ZONE 'America/New_York') = DATE(NOW() AT TIME ZONE 'America/New_York')
+       AND generated_at > NOW() - INTERVAL '3 days'
        ORDER BY generated_at DESC LIMIT 1`,
       [category]
     );
@@ -319,12 +319,12 @@ export async function getInsights(category = 'all') {
       return cachedInsightsData[category];
     }
 
-    // If not in memory, check database for recent insights (within 24 hours)
+    // If not in memory, check database for recent insights (within 4 days for bi-weekly cadence)
     // Skip 'all' category as we only archive specific categories
     if (category !== 'all') {
       const result = await pool.query(
         `SELECT * FROM insights_archive
-         WHERE category = $1 AND generated_at > NOW() - INTERVAL '24 hours'
+         WHERE category = $1 AND generated_at > NOW() - INTERVAL '4 days'
          ORDER BY generated_at DESC LIMIT 1`,
         [category]
       );
@@ -371,17 +371,17 @@ export async function getTodaysInsights(category) {
     // Check in-memory cache first
     if (cachedInsightsData[category]) {
       const cached = cachedInsightsData[category];
-      if (cached.generatedAt && isGeneratedToday(cached.generatedAt)) {
-        console.log(`[DB] ✓ Found today's insights in memory for: ${category}`);
+      if (cached.generatedAt && isGeneratedRecently(cached.generatedAt)) {
+        console.log(`[DB] ✓ Found recent insights in memory for: ${category}`);
         return cached;
       }
     }
 
-    // Check database for insights generated today (EST timezone)
+    // Check database for insights generated within recent window (3 days for bi-weekly cadence)
     const result = await pool.query(
       `SELECT * FROM insights_archive
        WHERE category = $1
-       AND DATE(generated_at AT TIME ZONE 'America/New_York') = DATE(NOW() AT TIME ZONE 'America/New_York')
+       AND generated_at > NOW() - INTERVAL '3 days'
        ORDER BY generated_at DESC LIMIT 1`,
       [category]
     );
@@ -403,11 +403,11 @@ export async function getTodaysInsights(category) {
         cachedAt: new Date().toISOString()
       };
 
-      console.log(`[DB] ✓ Found today's insights in database for: ${category}`);
+      console.log(`[DB] ✓ Found recent insights in database for: ${category}`);
       return insights;
     }
 
-    console.log(`[DB] No insights found for today for category: ${category}`);
+    console.log(`[DB] No recent insights found for category: ${category}`);
     return null;
   } catch (error) {
     console.error('[DB] Error getting today\'s insights:', error.message);
@@ -416,18 +416,16 @@ export async function getTodaysInsights(category) {
 }
 
 /**
- * Helper to check if a timestamp is from today (EST timezone)
+ * Helper to check if a timestamp is within recent window (for bi-weekly cadence)
+ * @param {string} generatedAt - ISO timestamp
+ * @param {number} windowDays - Number of days to consider "recent" (default 3 for Mon-Thu gap)
  */
-function isGeneratedToday(generatedAt) {
+function isGeneratedRecently(generatedAt, windowDays = 3) {
   const generated = new Date(generatedAt);
   const now = new Date();
-
-  // Convert both to EST for comparison
-  const estOptions = { timeZone: 'America/New_York' };
-  const generatedEST = generated.toLocaleDateString('en-US', estOptions);
-  const nowEST = now.toLocaleDateString('en-US', estOptions);
-
-  return generatedEST === nowEST;
+  const diffMs = now - generated;
+  const diffDays = diffMs / (1000 * 60 * 60 * 24);
+  return diffDays < windowDays;
 }
 
 /**

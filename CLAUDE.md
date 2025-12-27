@@ -37,7 +37,7 @@ AI-powered news aggregation and insights platform for mortgage industry product 
 | `server/sources.json` | RSS feed configuration (sources, categories, URLs) |
 | `server/rssFetcher.js` | Fetches and parses RSS feeds |
 | `server/insightsGenerator.js` | Claude AI prompt and insights generation |
-| `server/scheduler.js` | Cron job for daily 8am EST refresh |
+| `server/scheduler.js` | Cron job for bi-weekly refresh (Mon/Thu 8am EST) |
 | `server/db.js` | Database operations, caching, archive functions |
 | `server/index.js` | Express API routes |
 
@@ -83,7 +83,8 @@ Request for insights
 └─────────────────────────────┘
 ```
 
-- **Same-day check (EST)**: Only generates new insights if none exist for today
+- **Bi-weekly cadence**: Insights generated Monday & Thursday 8am EST
+- **3-day freshness check**: Only generates new insights if none exist within 3 days
 - **Persistent caching**: Database archive survives server restarts
 - **On-demand generation**: If server was asleep (Replit), insights generate on first user visit
 - **Deduplication**: Startup cleanup ensures one entry per category per day
@@ -104,6 +105,9 @@ Request for insights
 
 ### Product Management Category
 - Lenny's Newsletter, SVPG Articles, Product Talk, Lenny's Podcast (YouTube), How I AI Podcast, Supra Insider
+
+### Competitor Intel Category
+- Finovate, TechCrunch Fintech, Crunchbase News
 
 **Note:** Some sources have paywalls (National Mortgage News, HousingWire, Lenny's Newsletter). Insights are generated from available RSS summaries only.
 

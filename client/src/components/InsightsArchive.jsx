@@ -25,9 +25,7 @@ export default function InsightsArchive() {
 
   // Filter archives by date on client side
   useEffect(() => {
-    if (allArchives.length > 0) {
-      filterByDate();
-    }
+    filterByDate();
   }, [dateFilter, allArchives]);
 
   async function loadArchives() {
@@ -161,6 +159,12 @@ export default function InsightsArchive() {
             >
               Product Management
             </button>
+            <button
+              className={`category-chip competitor-intel ${categoryFilter === 'competitor-intel' ? 'active' : ''}`}
+              onClick={() => setCategoryFilter('competitor-intel')}
+            >
+              Competitor Intel
+            </button>
           </div>
 
           {/* Date Picker */}
@@ -192,10 +196,13 @@ export default function InsightsArchive() {
         <div className="archive-error">{error}</div>
       ) : archives.length === 0 ? (
         <div className="archive-empty">
-          <p>No archived insights found{dateFilter ? ` for ${new Date(dateFilter + 'T00:00:00').toLocaleDateString()}` : ''}.</p>
-          {dateFilter && (
-            <button className="clear-date-empty" onClick={clearDateFilter}>
-              Show All Dates
+          <p>No archived insights found
+            {categoryFilter ? ` for ${formatCategoryName(categoryFilter)}` : ''}
+            {dateFilter ? ` on ${new Date(dateFilter + 'T00:00:00').toLocaleDateString()}` : ''}.
+          </p>
+          {(dateFilter || categoryFilter) && (
+            <button className="clear-date-empty" onClick={() => { setCategoryFilter(''); setDateFilter(''); }}>
+              Show All
             </button>
           )}
           <p className="empty-hint">Insights are automatically archived when generated.</p>

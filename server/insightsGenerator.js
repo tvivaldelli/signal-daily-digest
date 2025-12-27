@@ -7,9 +7,10 @@ const anthropic = new Anthropic({
 /**
  * Generate themed insights from a collection of articles
  * @param {Array} articles - Array of article objects with title, summary, link, source
+ * @param {string} category - Category for prompt selection (mortgage, product-management, competitor-intel)
  * @returns {Promise<Object>} - Structured insights organized by theme
  */
-export async function generateInsights(articles) {
+export async function generateInsights(articles, category = null) {
   try {
     // Handle empty or small article sets
     if (!articles || articles.length === 0) {
@@ -37,73 +38,7 @@ export async function generateInsights(articles) {
       pubDate: article.pubDate
     }));
 
-    const prompt = `You are a strategic analyst for a Product Manager at Freedom Mortgage who is responsible for the digital mortgage experience. Analyze these articles to identify the most important strategic themes and actionable intelligence.
-
-Articles:
-${JSON.stringify(articleSummaries, null, 2)}
-
-ANALYSIS REQUIREMENTS:
-
-1. **Top Strategic Actions** (4-6 highest-impact actions):
-   - Focus on competitive differentiation and measurable business impact
-   - Each action must include: specific implementation, expected outcome, and priority level
-   - Categories: Product Innovation | Competitive Intelligence | Customer Experience | Technology & AI
-   - Be specific about HOW to implement, not just WHAT to do
-
-2. **Strategic Themes** (3-4 ONLY - Quality over quantity):
-   - Identify only the MOST IMPORTANT themes with significant strategic implications
-   - Skip minor topics - focus on what truly matters for competitive advantage
-   - For each theme provide DEEP ANALYSIS:
-     * What's happening: Specific trends, data points, statistics from articles
-     * Why it matters: Strategic implications, competitive context, market impact
-     * What to do: Concrete recommendations with expected business outcomes
-     * Supporting evidence: Article IDs and specific quotes/data
-
-ANALYTICAL DEPTH REQUIREMENTS:
-- Every insight must answer "So what?" - explain strategic significance
-- Include specific numbers, percentages, quotes, or data points from articles
-- Identify cause-and-effect relationships and trends
-- Compare/contrast different approaches or perspectives in the articles
-- Highlight competitive threats and opportunities
-- Focus on what gives Freedom Mortgage an edge in digital experience
-
-JSON STRUCTURE:
-{
-  "tldr": [
-    "Concise bullet point 1 (1-2 sentences max, direct statement, no article citations)",
-    "Concise bullet point 2 (1-2 sentences max, direct statement, no article citations)",
-    "Concise bullet point 3 (1-2 sentences max, direct statement, no article citations)"
-  ],
-  "recommendedActions": [
-    {
-      "action": "Specific, measurable action with implementation details",
-      "rationale": "Why this creates competitive advantage (with data/evidence)",
-      "category": "Product Innovation" | "Competitive Intelligence" | "Customer Experience" | "Technology & AI",
-      "priority": "High" | "Medium",
-      "expectedImpact": "Specific business outcome (e.g., reduce drop-off by X%, increase conversion)"
-    }
-  ],
-  "themes": [
-    {
-      "name": "Strategic theme name (concise)",
-      "icon": "📊" | "💻" | "📜" | "🏠" | "🎯" | "⚡" | "🔍" | "💡",
-      "insights": [
-        {
-          "text": "ANALYTICAL insight: What's happening + Why it matters + Strategic implications. Include specific data points, statistics, quotes. 4-6 sentences with depth.",
-          "articleIds": [relevant article IDs]
-        }
-      ],
-      "actions": [
-        {
-          "action": "Specific action with clear implementation path",
-          "impact": "Measurable business impact on digital mortgage experience"
-        }
-      ]
-    }
-  ]
-}
-
-Focus on QUALITY over COVERAGE. It's better to have 3 deeply analyzed themes than 7 superficial ones. Think like a strategic consultant - identify patterns, implications, and opportunities that a busy PM would miss by just reading headlines.`;
+    const prompt = getPromptForCategory(category, articleSummaries);
 
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-5-20250929',
@@ -272,4 +207,158 @@ function getFallbackInsights(articles) {
     generatedAt: new Date().toISOString(),
     fallback: true
   };
+}
+
+/**
+ * Get the appropriate prompt based on category
+ */
+function getPromptForCategory(category, articleSummaries) {
+  if (category === 'competitor-intel') {
+    return getCompetitorPrompt(articleSummaries);
+  }
+  return getDefaultPrompt(articleSummaries);
+}
+
+/**
+ * Default prompt for mortgage and product-management categories
+ */
+function getDefaultPrompt(articleSummaries) {
+  return `You are a strategic analyst for a Product Manager at Freedom Mortgage who is responsible for the digital mortgage experience. Analyze these articles to identify the most important strategic themes and actionable intelligence.
+
+Articles:
+${JSON.stringify(articleSummaries, null, 2)}
+
+ANALYSIS REQUIREMENTS:
+
+1. **Top Strategic Actions** (4-6 highest-impact actions):
+   - Focus on competitive differentiation and measurable business impact
+   - Each action must include: specific implementation, expected outcome, and priority level
+   - Categories: Product Innovation | Competitive Intelligence | Customer Experience | Technology & AI
+   - Be specific about HOW to implement, not just WHAT to do
+
+2. **Strategic Themes** (3-4 ONLY - Quality over quantity):
+   - Identify only the MOST IMPORTANT themes with significant strategic implications
+   - Skip minor topics - focus on what truly matters for competitive advantage
+   - For each theme provide DEEP ANALYSIS:
+     * What's happening: Specific trends, data points, statistics from articles
+     * Why it matters: Strategic implications, competitive context, market impact
+     * What to do: Concrete recommendations with expected business outcomes
+     * Supporting evidence: Article IDs and specific quotes/data
+
+ANALYTICAL DEPTH REQUIREMENTS:
+- Every insight must answer "So what?" - explain strategic significance
+- Include specific numbers, percentages, quotes, or data points from articles
+- Identify cause-and-effect relationships and trends
+- Compare/contrast different approaches or perspectives in the articles
+- Highlight competitive threats and opportunities
+- Focus on what gives Freedom Mortgage an edge in digital experience
+
+JSON STRUCTURE:
+{
+  "tldr": [
+    "Concise bullet point 1 (1-2 sentences max, direct statement, no article citations)",
+    "Concise bullet point 2 (1-2 sentences max, direct statement, no article citations)",
+    "Concise bullet point 3 (1-2 sentences max, direct statement, no article citations)"
+  ],
+  "recommendedActions": [
+    {
+      "action": "Specific, measurable action with implementation details",
+      "rationale": "Why this creates competitive advantage (with data/evidence)",
+      "category": "Product Innovation" | "Competitive Intelligence" | "Customer Experience" | "Technology & AI",
+      "priority": "High" | "Medium",
+      "expectedImpact": "Specific business outcome (e.g., reduce drop-off by X%, increase conversion)"
+    }
+  ],
+  "themes": [
+    {
+      "name": "Strategic theme name (concise)",
+      "icon": "📊" | "💻" | "📜" | "🏠" | "🎯" | "⚡" | "🔍" | "💡",
+      "insights": [
+        {
+          "text": "ANALYTICAL insight: What's happening + Why it matters + Strategic implications. Include specific data points, statistics, quotes. 4-6 sentences with depth.",
+          "articleIds": [relevant article IDs]
+        }
+      ],
+      "actions": [
+        {
+          "action": "Specific action with clear implementation path",
+          "impact": "Measurable business impact on digital mortgage experience"
+        }
+      ]
+    }
+  ]
+}
+
+Focus on QUALITY over COVERAGE. It's better to have 3 deeply analyzed themes than 7 superficial ones. Think like a strategic consultant - identify patterns, implications, and opportunities that a busy PM would miss by just reading headlines.`;
+}
+
+/**
+ * Competitor-specific prompt for competitor-intel category
+ */
+function getCompetitorPrompt(articleSummaries) {
+  return `You are a competitive intelligence analyst for Freedom Mortgage's product leadership. Analyze these fintech and mortgage industry articles to identify competitor activities and strategic implications.
+
+COMPETITORS TO TRACK:
+- Top Lenders: Rocket Mortgage, United Wholesale Mortgage (UWM), loanDepot, PennyMac, Mr. Cooper
+- Fintech Disruptors: Better, Blend, Figure, Beeline, Tomo, Morty
+
+Articles:
+${JSON.stringify(articleSummaries, null, 2)}
+
+ANALYSIS REQUIREMENTS:
+
+1. **Competitor Activity Summary** (TL;DR - 3 bullets):
+   - Focus on specific competitor moves, not general market trends
+   - Name the competitor and specific action taken
+   - If no direct competitor news, summarize fintech trends affecting mortgage industry
+
+2. **Competitive Threats & Opportunities** (3-5 items):
+   - Product launches or feature releases by competitors
+   - Funding rounds or M&A activity
+   - Strategic partnerships
+   - Technology/AI investments
+   - Pricing or business model changes
+
+3. **Strategic Implications for Freedom Mortgage**:
+   - What competitive gaps should Freedom address?
+   - What opportunities exist to differentiate?
+   - What technology investments are competitors making?
+
+JSON STRUCTURE:
+{
+  "tldr": [
+    "[Competitor] launched/announced [specific action]",
+    "[Competitor] raised/acquired [specific deal]",
+    "Market trend: [implication for Freedom]"
+  ],
+  "recommendedActions": [
+    {
+      "action": "Specific competitive response",
+      "rationale": "Why this matters - what competitor triggered this",
+      "category": "Competitive Response" | "Product Gap" | "Technology Investment",
+      "priority": "High" | "Medium",
+      "expectedImpact": "How this helps Freedom compete"
+    }
+  ],
+  "themes": [
+    {
+      "name": "Competitor or trend name",
+      "icon": "🎯" | "⚔️" | "🚀" | "💰" | "🤖",
+      "insights": [
+        {
+          "text": "What they did, why it matters for the mortgage industry, what Freedom should consider. Be specific about competitive implications.",
+          "articleIds": [relevant article IDs]
+        }
+      ],
+      "actions": [
+        {
+          "action": "Recommended competitive response",
+          "impact": "Competitive advantage gained or gap closed"
+        }
+      ]
+    }
+  ]
+}
+
+Focus on ACTIONABLE competitive intelligence. Skip generic fintech news - only include items directly relevant to mortgage/lending competition. If articles don't mention specific competitors, analyze trends that could affect Freedom's competitive position.`;
 }
