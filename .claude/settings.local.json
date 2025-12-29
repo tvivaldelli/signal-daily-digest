@@ -55,7 +55,12 @@
       "Bash(server/index.js )",
       "Bash(server/insightsGenerator.js )",
       "Bash(server/rssFetcher.js )",
-      "Bash(server/scheduler.js)"
+      "Bash(server/scheduler.js)",
+      "Bash(if [ -n \"$ANTHROPIC_API_KEY\" ])",
+      "Bash(then echo \"ANTHROPIC_API_KEY is set \\($#ANTHROPIC_API_KEY chars\\)\")",
+      "Bash(else echo \"ANTHROPIC_API_KEY is NOT set\")",
+      "Bash(fi)",
+      "Bash(timeout 90 node:*)"
     ],
     "deny": [],
     "ask": []
