@@ -3,7 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { getArticles, getInsights, getTodaysInsights, saveInsights, clearInsights, getArchivedInsights, getArchivedInsightById, searchArchivedInsights } from './db.js';
+import { getArticles, getInsights, getTodaysInsights, saveInsights, clearInsights, clearArchivedInsights, getArchivedInsights, getArchivedInsightById, searchArchivedInsights } from './db.js';
 import { fetchAllFeeds, getSources } from './rssFetcher.js';
 import { initScheduler } from './scheduler.js';
 import { generateInsights } from './insightsGenerator.js';
@@ -23,6 +23,10 @@ const PORT = process.env.PORT || 3001;
 const rateLimitStore = new Map();
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
 const RATE_LIMIT_MAX_REQUESTS = 100; // 100 requests per minute
+
+// Rate limiting for force refresh (1 hour cooldown)
+const FORCE_REFRESH_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
+let lastForceRefreshTime = null;
 
 function rateLimit(req, res, next) {
   const ip = req.ip || req.connection.remoteAddress || 'unknown';
@@ -273,7 +277,7 @@ app.post('/api/insights', async (req, res) => {
     // No insights for today - generate fresh ones
     console.log(`\n[API] No insights for today, generating new insights for ${articles.length} articles (category: ${category})...`);
 
-    const insights = await generateInsights(articles);
+    const insights = await generateInsights(articles, category);
 
     // Calculate date range from articles
     const dates = articles.map(a => new Date(a.pubDate)).filter(d => !isNaN(d));
@@ -408,6 +412,116 @@ app.get('/api/insights/search', async (req, res) => {
       message: error.message
     });
   }
+});
+
+/**
+ * POST /api/insights/refresh
+ * Force refresh insights (clears cache and optionally regenerates)
+ * Password protected with 1-hour cooldown
+ * Body: { password, category? }
+ */
+app.post('/api/insights/refresh', async (req, res) => {
+  try {
+    const { password, category = 'all' } = req.body;
+
+    // Check password
+    const adminPassword = process.env.ADMIN_REFRESH_PASSWORD;
+    if (!adminPassword) {
+      return res.status(503).json({
+        success: false,
+        error: 'Not configured',
+        message: 'Admin password not configured. Set ADMIN_REFRESH_PASSWORD in environment.'
+      });
+    }
+
+    if (!password || password !== adminPassword) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized',
+        message: 'Invalid password'
+      });
+    }
+
+    // Check rate limit (1 hour cooldown)
+    const now = Date.now();
+    if (lastForceRefreshTime) {
+      const timeSinceLastRefresh = now - lastForceRefreshTime;
+      if (timeSinceLastRefresh < FORCE_REFRESH_COOLDOWN_MS) {
+        const remainingMs = FORCE_REFRESH_COOLDOWN_MS - timeSinceLastRefresh;
+        const remainingMinutes = Math.ceil(remainingMs / 60000);
+        return res.status(429).json({
+          success: false,
+          error: 'Rate limited',
+          message: `Please wait ${remainingMinutes} minute${remainingMinutes > 1 ? 's' : ''} before refreshing again`,
+          cooldownRemaining: remainingMs,
+          nextRefreshAt: new Date(lastForceRefreshTime + FORCE_REFRESH_COOLDOWN_MS).toISOString()
+        });
+      }
+    }
+
+    // Validate category
+    const validCategories = ['mortgage', 'product-management', 'competitor-intel', 'all'];
+    if (!validCategories.includes(category)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid category',
+        message: `Category must be one of: ${validCategories.join(', ')}`
+      });
+    }
+
+    console.log(`\n[API] Force refresh requested for category: ${category}`);
+
+    // Clear both in-memory and database cache
+    const { cleared } = await clearArchivedInsights(category);
+
+    // Update rate limit timestamp
+    lastForceRefreshTime = now;
+
+    res.json({
+      success: true,
+      message: `Cleared ${cleared} cached insight${cleared !== 1 ? 's' : ''} for ${category}`,
+      clearedCount: cleared,
+      category,
+      nextRefreshAt: new Date(now + FORCE_REFRESH_COOLDOWN_MS).toISOString()
+    });
+
+  } catch (error) {
+    console.error('Error in force refresh:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to refresh insights',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/insights/refresh/status
+ * Check force refresh cooldown status (no auth required)
+ */
+app.get('/api/insights/refresh/status', (req, res) => {
+  const now = Date.now();
+
+  if (!lastForceRefreshTime) {
+    return res.json({
+      success: true,
+      canRefresh: true,
+      lastRefreshAt: null,
+      cooldownRemaining: 0
+    });
+  }
+
+  const timeSinceLastRefresh = now - lastForceRefreshTime;
+  const canRefresh = timeSinceLastRefresh >= FORCE_REFRESH_COOLDOWN_MS;
+  const cooldownRemaining = canRefresh ? 0 : FORCE_REFRESH_COOLDOWN_MS - timeSinceLastRefresh;
+
+  res.json({
+    success: true,
+    canRefresh,
+    lastRefreshAt: new Date(lastForceRefreshTime).toISOString(),
+    cooldownRemaining,
+    nextRefreshAt: canRefresh ? null : new Date(lastForceRefreshTime + FORCE_REFRESH_COOLDOWN_MS).toISOString()
+  });
 });
 
 // Serve static files from React build

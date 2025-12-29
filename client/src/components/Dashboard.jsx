@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { getArticles, generateInsights, getCategories } from '../services/api';
+import { getArticles, generateInsights, getCategories, forceRefreshInsights, getRefreshStatus } from '../services/api';
 import ArticleCard from './ArticleCard';
 import InsightsSummary from './InsightsSummary';
 import InsightsArchive from './InsightsArchive';
@@ -19,13 +19,45 @@ export default function Dashboard() {
   const [selectedCategory, setSelectedCategory] = useState('all'); // 'all', 'mortgage', 'product-management'
   const [activeTab, setActiveTab] = useState('insights'); // 'insights' or 'archive'
 
+  // Force refresh state
+  const [showRefreshModal, setShowRefreshModal] = useState(false);
+  const [refreshPassword, setRefreshPassword] = useState('');
+  const [refreshError, setRefreshError] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const [canRefresh, setCanRefresh] = useState(true);
+  const [cooldownRemaining, setCooldownRemaining] = useState(0);
+  const [rememberPassword, setRememberPassword] = useState(false);
+
   // Request ID ref to prevent race conditions when switching categories rapidly
   const insightsRequestIdRef = useRef(0);
 
   // Load categories and articles on mount
   useEffect(() => {
     loadCategoriesAndArticles();
+    checkRefreshStatus();
+    // Load saved password from localStorage if "remember me" was checked
+    const savedPassword = localStorage.getItem('refreshPassword');
+    if (savedPassword) {
+      setRefreshPassword(savedPassword);
+      setRememberPassword(true);
+    }
   }, []);
+
+  // Update cooldown timer every second when in cooldown
+  useEffect(() => {
+    if (cooldownRemaining > 0) {
+      const timer = setInterval(() => {
+        setCooldownRemaining(prev => {
+          if (prev <= 1000) {
+            setCanRefresh(true);
+            return 0;
+          }
+          return prev - 1000;
+        });
+      }, 1000);
+      return () => clearInterval(timer);
+    }
+  }, [cooldownRemaining > 0]);
 
   // Filter articles locally when filters or category change (no API call, no flicker)
   useEffect(() => {
@@ -212,6 +244,88 @@ export default function Dashboard() {
     }
   }
 
+  // Force refresh functions
+  async function checkRefreshStatus() {
+    try {
+      const status = await getRefreshStatus();
+      setCanRefresh(status.canRefresh);
+      setCooldownRemaining(status.cooldownRemaining || 0);
+    } catch (err) {
+      console.error('Error checking refresh status:', err);
+    }
+  }
+
+  function openRefreshModal() {
+    setRefreshError('');
+    setShowRefreshModal(true);
+  }
+
+  function closeRefreshModal() {
+    setShowRefreshModal(false);
+    setRefreshError('');
+    // Only clear password if "remember me" is not checked
+    if (!rememberPassword) {
+      setRefreshPassword('');
+    }
+  }
+
+  async function handleForceRefresh() {
+    if (!refreshPassword.trim()) {
+      setRefreshError('Please enter the admin password');
+      return;
+    }
+
+    setRefreshing(true);
+    setRefreshError('');
+
+    const result = await forceRefreshInsights(refreshPassword, 'all');
+
+    setRefreshing(false);
+
+    if (result.success) {
+      // Save password if "remember me" is checked
+      if (rememberPassword) {
+        localStorage.setItem('refreshPassword', refreshPassword);
+      } else {
+        localStorage.removeItem('refreshPassword');
+      }
+
+      // Update cooldown state
+      setCanRefresh(false);
+      setCooldownRemaining(60 * 60 * 1000); // 1 hour
+
+      // Close modal
+      closeRefreshModal();
+
+      // Clear frontend insights cache and force full reload
+      // Using window.location.reload() to ensure clean state
+      setInsightsByCategory({});
+      window.location.reload();
+    } else {
+      // Handle errors
+      if (result.error === 'Unauthorized') {
+        setRefreshError('Invalid password');
+        // Clear saved password if it was wrong
+        localStorage.removeItem('refreshPassword');
+      } else if (result.error === 'Rate limited') {
+        setRefreshError(result.message);
+        setCooldownRemaining(result.cooldownRemaining || 0);
+        setCanRefresh(false);
+        closeRefreshModal();
+      } else {
+        setRefreshError(result.message || 'Failed to refresh insights');
+      }
+    }
+  }
+
+  function formatCooldown(ms) {
+    const minutes = Math.ceil(ms / 60000);
+    if (minutes >= 60) {
+      return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+    }
+    return `${minutes}m`;
+  }
+
   // Get unique sources for the current category
   function getSourcesForCategory() {
     const categoryArticles = selectedCategory === 'all'
@@ -299,6 +413,64 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Force Refresh Modal */}
+      {showRefreshModal && (
+        <div className="modal-overlay" onClick={closeRefreshModal}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h3>Force Refresh Insights</h3>
+            <p className="modal-description">
+              This will clear all cached insights and regenerate them.
+              This action has a 1-hour cooldown.
+            </p>
+
+            <div className="modal-form">
+              <label htmlFor="refresh-password">Admin Password:</label>
+              <input
+                id="refresh-password"
+                type="password"
+                value={refreshPassword}
+                onChange={e => setRefreshPassword(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleForceRefresh()}
+                placeholder="Enter password"
+                autoFocus
+                disabled={refreshing}
+              />
+
+              <label className="remember-checkbox">
+                <input
+                  type="checkbox"
+                  checked={rememberPassword}
+                  onChange={e => setRememberPassword(e.target.checked)}
+                  disabled={refreshing}
+                />
+                Remember password
+              </label>
+
+              {refreshError && (
+                <div className="modal-error">{refreshError}</div>
+              )}
+            </div>
+
+            <div className="modal-actions">
+              <button
+                className="modal-btn cancel"
+                onClick={closeRefreshModal}
+                disabled={refreshing}
+              >
+                Cancel
+              </button>
+              <button
+                className="modal-btn confirm"
+                onClick={handleForceRefresh}
+                disabled={refreshing}
+              >
+                {refreshing ? 'Refreshing...' : 'Refresh'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Current Insights View */}
       {activeTab === 'insights' && (
         <div role="tabpanel" id="insights-panel" aria-labelledby="insights-tab">
@@ -310,6 +482,15 @@ export default function Dashboard() {
                   <div className="updated-label">
                     Updated as of {dateInfo.updatedAsOf}
                     <span className="refresh-schedule"> • Insights refresh Mon & Thu at 8am EST</span>
+                    <button
+                      className={`refresh-btn ${!canRefresh ? 'disabled' : ''}`}
+                      onClick={openRefreshModal}
+                      disabled={!canRefresh}
+                      title={canRefresh ? 'Force refresh insights' : `Next refresh in ${formatCooldown(cooldownRemaining)}`}
+                      aria-label="Force refresh insights"
+                    >
+                      {canRefresh ? '↻' : formatCooldown(cooldownRemaining)}
+                    </button>
                   </div>
                 )}
               </div>

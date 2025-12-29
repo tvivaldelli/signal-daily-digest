@@ -641,7 +641,7 @@ export async function searchArchivedInsights(keyword, filters = {}) {
 }
 
 /**
- * Clear cached insights
+ * Clear cached insights (in-memory only)
  */
 export async function clearInsights(category = null) {
   try {
@@ -656,6 +656,50 @@ export async function clearInsights(category = null) {
   } catch (error) {
     console.error('[DB] Error clearing insights:', error.message);
     return false;
+  }
+}
+
+/**
+ * Clear archived insights from database (for force refresh)
+ * @param {string} category - Category to clear, or 'all' for all categories
+ * @returns {Promise<{cleared: number}>} - Number of entries cleared
+ */
+export async function clearArchivedInsights(category = 'all') {
+  try {
+    let result;
+
+    if (category === 'all') {
+      // Clear all recent insights (within 3-day window)
+      result = await pool.query(
+        `DELETE FROM insights_archive
+         WHERE generated_at > NOW() - INTERVAL '3 days'
+         RETURNING id`
+      );
+    } else {
+      // Clear specific category's recent insights
+      result = await pool.query(
+        `DELETE FROM insights_archive
+         WHERE category = $1
+         AND generated_at > NOW() - INTERVAL '3 days'
+         RETURNING id`,
+        [category]
+      );
+    }
+
+    const cleared = result.rowCount;
+    console.log(`[DB] ✓ Cleared ${cleared} archived insights for category: ${category}`);
+
+    // Also clear in-memory cache
+    if (category === 'all') {
+      insightsCache.clear();
+    } else {
+      insightsCache.delete(category);
+    }
+
+    return { cleared };
+  } catch (error) {
+    console.error('[DB] Error clearing archived insights:', error.message);
+    return { cleared: 0 };
   }
 }
 
@@ -748,6 +792,7 @@ export default {
   getInsights,
   getTodaysInsights,
   clearInsights,
+  clearArchivedInsights,
   archiveInsights,
   getArchivedInsights,
   getArchivedInsightById,

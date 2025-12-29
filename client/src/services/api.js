@@ -149,4 +149,38 @@ export async function searchArchivedInsights(query, filters = {}) {
   }
 }
 
+/**
+ * Force refresh insights (password protected)
+ * @param {String} password - Admin password
+ * @param {String} category - Category to refresh (default: 'all')
+ * @returns {Promise<Object>} - Result with cleared count and next refresh time
+ */
+export async function forceRefreshInsights(password, category = 'all') {
+  try {
+    const response = await api.post('/api/insights/refresh', { password, category });
+    return response.data;
+  } catch (error) {
+    // Return error response data if available (for 401, 429, etc.)
+    if (error.response?.data) {
+      return error.response.data;
+    }
+    console.error('Error force refreshing insights:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get force refresh cooldown status
+ * @returns {Promise<Object>} - { canRefresh, cooldownRemaining, nextRefreshAt }
+ */
+export async function getRefreshStatus() {
+  try {
+    const response = await api.get('/api/insights/refresh/status');
+    return response.data;
+  } catch (error) {
+    console.error('Error getting refresh status:', error);
+    throw error;
+  }
+}
+
 export default api;

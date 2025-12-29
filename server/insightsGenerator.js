@@ -4,8 +4,8 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY
 });
 
-// Timeout duration for Claude API calls (60 seconds)
-const API_TIMEOUT_MS = 60000;
+// Timeout duration for Claude API calls (3 minutes for large article sets)
+const API_TIMEOUT_MS = 180000;
 
 /**
  * Create a timeout promise that rejects after specified milliseconds
