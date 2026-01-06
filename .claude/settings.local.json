@@ -60,7 +60,9 @@
       "Bash(then echo \"ANTHROPIC_API_KEY is set \\($#ANTHROPIC_API_KEY chars\\)\")",
       "Bash(else echo \"ANTHROPIC_API_KEY is NOT set\")",
       "Bash(fi)",
-      "Bash(timeout 90 node:*)"
+      "Bash(timeout 90 node:*)",
+      "Bash(timeout 15 node:*)",
+      "Skill(frontend-design:frontend-design)"
     ],
     "deny": [],
     "ask": []
