@@ -1,18 +1,71 @@
 .article-card {
   background: var(--background-paper);
-  border: none;
-  border-radius: 12px;
+  border: 1px solid var(--grey-200);
+  border-radius: 16px;
   padding: var(--spacing-2);
   box-shadow: var(--shadow-2);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1);
   display: flex;
   flex-direction: column;
   height: 100%;
+  position: relative;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(24px);
 }
 
-.article-card:hover {
-  box-shadow: var(--shadow-4);
-  transform: translateY(-4px);
+/* Category accent bar at top */
+.article-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--category-mortgage);
+  transition: height 0.2s ease;
+}
+
+.article-card.visible:hover {
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12), 0 0 0 1px var(--category-mortgage);
+  transform: translateY(-6px);
+}
+
+.article-card.visible:hover::before {
+  height: 5px;
+}
+
+/* Category-specific colors */
+.article-card.category-mortgage::before {
+  background: var(--category-mortgage);
+}
+
+.article-card.category-mortgage.visible:hover {
+  box-shadow: 0 12px 28px rgba(14, 165, 233, 0.15), 0 0 0 1px var(--category-mortgage);
+}
+
+.article-card.category-product-management::before {
+  background: var(--category-product);
+}
+
+.article-card.category-product-management.visible:hover {
+  box-shadow: 0 12px 28px rgba(16, 185, 129, 0.15), 0 0 0 1px var(--category-product);
+}
+
+.article-card.category-competitor-intel::before {
+  background: var(--category-competitor);
+}
+
+.article-card.category-competitor-intel.visible:hover {
+  box-shadow: 0 12px 28px rgba(249, 115, 22, 0.15), 0 0 0 1px var(--category-competitor);
+}
+
+/* Scroll-triggered entrance animation */
+.article-card.visible {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .article-header {
@@ -24,16 +77,32 @@
 }
 
 .article-source {
-  background: linear-gradient(135deg, var(--primary-main) 0%, var(--primary-dark) 100%);
+  background: linear-gradient(135deg, var(--category-mortgage) 0%, var(--category-mortgage-dark) 100%);
   color: white;
-  padding: 4px 12px;
-  border-radius: 12px;
+  padding: 5px 12px;
+  border-radius: 20px;
   font-size: 0.7rem;
-  font-weight: 500;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  box-shadow: var(--shadow-1);
+  box-shadow: 0 2px 6px rgba(14, 165, 233, 0.25);
   white-space: nowrap;
+}
+
+/* Category-specific source badges */
+.category-mortgage .article-source {
+  background: linear-gradient(135deg, var(--category-mortgage) 0%, var(--category-mortgage-dark) 100%);
+  box-shadow: 0 2px 6px rgba(14, 165, 233, 0.25);
+}
+
+.category-product-management .article-source {
+  background: linear-gradient(135deg, var(--category-product) 0%, var(--category-product-dark) 100%);
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.25);
+}
+
+.category-competitor-intel .article-source {
+  background: linear-gradient(135deg, var(--category-competitor) 0%, var(--category-competitor-dark) 100%);
+  box-shadow: 0 2px 6px rgba(249, 115, 22, 0.25);
 }
 
 .article-meta {
@@ -159,3 +228,140 @@
     flex-wrap: wrap;
   }
 }
+
+/* Skeleton Loading Cards */
+.skeleton-card {
+  background: var(--background-paper);
+  border: 1px solid var(--grey-200);
+  border-radius: 16px;
+  padding: var(--spacing-2);
+  box-shadow: var(--shadow-2);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+.skeleton-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--grey-200);
+}
+
+.skeleton-card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.4) 50%,
+    transparent 100%
+  );
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    left: -100%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+.skeleton-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-2);
+  gap: var(--spacing-2);
+}
+
+.skeleton-badge {
+  width: 80px;
+  height: 26px;
+  background: linear-gradient(90deg, var(--grey-200) 0%, var(--grey-100) 100%);
+  border-radius: 20px;
+}
+
+.skeleton-date {
+  width: 60px;
+  height: 14px;
+  background: var(--grey-200);
+  border-radius: 4px;
+}
+
+.skeleton-image {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: linear-gradient(135deg, var(--grey-100) 0%, var(--grey-200) 100%);
+  border-radius: 8px;
+  margin: var(--spacing-2) 0;
+}
+
+.skeleton-title {
+  height: 24px;
+  background: var(--grey-200);
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+
+.skeleton-title:nth-child(2) {
+  width: 85%;
+}
+
+.skeleton-title:nth-child(3) {
+  width: 60%;
+}
+
+.skeleton-text {
+  height: 14px;
+  background: var(--grey-100);
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+.skeleton-text:nth-child(1) { width: 100%; }
+.skeleton-text:nth-child(2) { width: 95%; }
+.skeleton-text:nth-child(3) { width: 88%; }
+.skeleton-text:nth-child(4) { width: 70%; }
+
+.skeleton-link {
+  width: 100px;
+  height: 16px;
+  background: linear-gradient(90deg, var(--category-mortgage-light) 0%, var(--grey-100) 100%);
+  border-radius: 4px;
+  margin-top: auto;
+}
+
+/* Staggered skeleton entrance */
+.skeleton-card {
+  animation: skeletonEntrance 0.4s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+@keyframes skeletonEntrance {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.skeleton-card:nth-child(1) { animation-delay: 0.05s; }
+.skeleton-card:nth-child(2) { animation-delay: 0.1s; }
+.skeleton-card:nth-child(3) { animation-delay: 0.15s; }
+.skeleton-card:nth-child(4) { animation-delay: 0.2s; }
+.skeleton-card:nth-child(5) { animation-delay: 0.25s; }
+.skeleton-card:nth-child(6) { animation-delay: 0.3s; }

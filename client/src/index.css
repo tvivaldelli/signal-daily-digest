@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Inter:wght@300;400;500;600;700&display=swap');
 
 * {
   box-sizing: border-box;
@@ -54,6 +54,25 @@
   --panel-border: rgba(14, 165, 233, 0.2);
   --panel-text-muted: rgba(148, 206, 236, 0.8);
 
+  /* Header Accent Colors */
+  --gold: #F0B254;
+  --gold-light: #FFD993;
+  --gold-dark: #C98B2A;
+  --gold-glow: rgba(240, 178, 84, 0.4);
+
+  /* Category Colors */
+  --category-mortgage: #0EA5E9;
+  --category-mortgage-light: rgba(14, 165, 233, 0.12);
+  --category-mortgage-dark: #0284C7;
+
+  --category-product: #10B981;
+  --category-product-light: rgba(16, 185, 129, 0.12);
+  --category-product-dark: #059669;
+
+  --category-competitor: #F97316;
+  --category-competitor-light: rgba(249, 115, 22, 0.12);
+  --category-competitor-dark: #EA580C;
+
   /* Dark Panel Gradients */
   --gradient-dark-panel: linear-gradient(135deg, var(--panel-dark-1) 0%, var(--panel-dark-2) 50%, var(--panel-dark-3) 100%);
   --gradient-panel-accent: radial-gradient(circle at 20% 50%, var(--panel-accent-1) 0%, transparent 50%),
@@ -64,8 +83,9 @@
   --shadow-dark-panel: 0 8px 32px rgba(6, 20, 40, 0.4), 0 2px 8px rgba(14, 165, 233, 0.2);
 
   /* Typography */
-  font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Helvetica Neue', sans-serif;
+  --font-display: 'DM Serif Display', Georgia, serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: var(--font-body);
   line-height: 1.5;
   font-weight: 400;
 
@@ -87,7 +107,10 @@ body {
   padding: 0;
   min-width: 320px;
   min-height: 100vh;
-  background: linear-gradient(180deg, var(--grey-50) 0%, var(--grey-100) 100%);
+  background:
+    radial-gradient(circle at 1px 1px, rgba(0, 71, 106, 0.03) 1px, transparent 0),
+    linear-gradient(180deg, var(--grey-50) 0%, var(--grey-100) 100%);
+  background-size: 24px 24px, 100% 100%;
   color: var(--text-primary);
 }
 
@@ -103,5 +126,5 @@ a:hover {
 }
 
 button {
-  font-family: 'Poppins', inherit;
+  font-family: var(--font-body);
 }
