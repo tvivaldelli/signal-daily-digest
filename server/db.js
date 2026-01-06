@@ -509,8 +509,10 @@ function isGeneratedRecently(generatedAt, windowDays = 3) {
 export async function getArchivedInsights(filters = {}) {
   try {
     // Only show historical insights (before today in EST timezone)
+    // Note: generated_at is stored as TIMESTAMP WITHOUT TIME ZONE in UTC
+    // We must first establish it's UTC, then convert to EST for proper comparison
     let query = `SELECT * FROM insights_archive
-                 WHERE DATE(generated_at AT TIME ZONE 'America/New_York') < DATE(NOW() AT TIME ZONE 'America/New_York')`;
+                 WHERE DATE((generated_at AT TIME ZONE 'UTC') AT TIME ZONE 'America/New_York') < DATE(NOW() AT TIME ZONE 'America/New_York')`;
     const params = [];
     let paramIndex = 1;
 
@@ -591,6 +593,61 @@ export async function getArchivedInsightById(id) {
   } catch (error) {
     console.error('[DB] Error getting archived insight:', error.message);
     return null;
+  }
+}
+
+/**
+ * Get ALL insights for export (no date restrictions, no limit)
+ * Returns both current and historical insights in a format suitable for export
+ */
+export async function getAllInsightsForExport(filters = {}) {
+  try {
+    let query = `SELECT * FROM insights_archive WHERE 1=1`;
+    const params = [];
+    let paramIndex = 1;
+
+    if (filters.category && filters.category !== 'all') {
+      query += ` AND category = $${paramIndex}`;
+      params.push(filters.category);
+      paramIndex++;
+    }
+
+    if (filters.startDate) {
+      query += ` AND generated_at >= $${paramIndex}`;
+      params.push(new Date(filters.startDate).toISOString());
+      paramIndex++;
+    }
+
+    if (filters.endDate) {
+      const endDate = new Date(filters.endDate);
+      endDate.setHours(23, 59, 59, 999);
+      query += ` AND generated_at <= $${paramIndex}`;
+      params.push(endDate.toISOString());
+      paramIndex++;
+    }
+
+    query += ' ORDER BY generated_at DESC';
+
+    const result = await pool.query(query, params);
+
+    // Format results for export
+    const insights = result.rows.map(row => ({
+      id: row.id,
+      category: row.category,
+      tldr: row.tldr,
+      recommendedActions: row.recommended_actions,
+      themes: row.themes,
+      articleCount: row.article_count,
+      dateRangeStart: row.date_range_start,
+      dateRangeEnd: row.date_range_end,
+      generatedAt: row.generated_at
+    }));
+
+    console.log(`[DB] Retrieved ${insights.length} insights for export`);
+    return insights;
+  } catch (error) {
+    console.error('[DB] Error getting insights for export:', error.message);
+    return [];
   }
 }
 
@@ -737,14 +794,16 @@ async function cleanupBlankInsights() {
 async function deduplicateArchiveEntries() {
   try {
     // First, get the IDs we want to keep (most recent valid entry per category per day)
+    // Note: generated_at is stored as TIMESTAMP WITHOUT TIME ZONE in UTC
+    // We must first establish it's UTC, then convert to EST for proper grouping
     const keepResult = await pool.query(`
-      SELECT DISTINCT ON (category, DATE(generated_at AT TIME ZONE 'America/New_York'))
+      SELECT DISTINCT ON (category, DATE((generated_at AT TIME ZONE 'UTC') AT TIME ZONE 'America/New_York'))
              id
       FROM insights_archive
       WHERE themes IS NOT NULL
         AND themes != '[]'::jsonb
         AND jsonb_array_length(themes) > 0
-      ORDER BY category, DATE(generated_at AT TIME ZONE 'America/New_York'), generated_at DESC
+      ORDER BY category, DATE((generated_at AT TIME ZONE 'UTC') AT TIME ZONE 'America/New_York'), generated_at DESC
     `);
 
     const idsToKeep = keepResult.rows.map(row => row.id);
@@ -796,5 +855,6 @@ export default {
   archiveInsights,
   getArchivedInsights,
   getArchivedInsightById,
-  searchArchivedInsights
+  searchArchivedInsights,
+  getAllInsightsForExport
 };
