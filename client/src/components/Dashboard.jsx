@@ -368,11 +368,37 @@ export default function Dashboard() {
           <div className="header-badge">Industry Intelligence Platform</div>
           <h1>
             <span className="header-icon-wrapper">
-              <span className="header-icon">💡</span>
+              <svg className="header-icon" viewBox="0 0 40 40" fill="none" aria-hidden="true">
+                {/* Light beam rays */}
+                <g className="light-rays">
+                  <path d="M20 8 L16 2" stroke="rgba(255,255,255,0.6)" strokeWidth="1.5" strokeLinecap="round"/>
+                  <path d="M20 8 L24 2" stroke="rgba(255,255,255,0.6)" strokeWidth="1.5" strokeLinecap="round"/>
+                  <path d="M20 8 L11 4" stroke="rgba(255,255,255,0.4)" strokeWidth="1" strokeLinecap="round"/>
+                  <path d="M20 8 L29 4" stroke="rgba(255,255,255,0.4)" strokeWidth="1" strokeLinecap="round"/>
+                </g>
+                {/* Lighthouse tower - wider base, narrow top */}
+                <path d="M16 16 L10 36 L30 36 L24 16 Z"
+                      fill="rgba(10, 22, 40, 0.95)"
+                      stroke="rgba(255,255,255,0.2)"
+                      strokeWidth="0.5"/>
+                {/* Stripes on tower */}
+                <path d="M14.5 24 L25.5 24" stroke="rgba(255,255,255,0.15)" strokeWidth="3"/>
+                <path d="M12.5 30 L27.5 30" stroke="rgba(255,255,255,0.15)" strokeWidth="3"/>
+                {/* Lantern room */}
+                <rect x="15" y="10" width="10" height="6" rx="1" fill="rgba(10, 22, 40, 0.9)" stroke="rgba(255,255,255,0.3)" strokeWidth="0.5"/>
+                {/* Light glow */}
+                <circle cx="20" cy="13" r="2.5" fill="white" className="beacon-light"/>
+                {/* Lantern room top/roof */}
+                <path d="M14.5 10 L17 6 L23 6 L25.5 10" fill="rgba(10, 22, 40, 0.9)" stroke="rgba(255,255,255,0.3)" strokeWidth="0.5"/>
+                {/* Walkway/gallery under lantern */}
+                <rect x="14" y="15" width="12" height="2" rx="0.5" fill="rgba(10, 22, 40, 0.85)" stroke="rgba(255,255,255,0.2)" strokeWidth="0.5"/>
+                {/* Base platform */}
+                <rect x="8" y="35" width="24" height="4" rx="1" fill="rgba(10, 22, 40, 0.9)" stroke="rgba(255,255,255,0.2)" strokeWidth="0.5"/>
+              </svg>
             </span>
             Mortgage Intelligence Hub
           </h1>
-          <p className="subtitle">Real-time insights for product leaders • Powered by AI</p>
+          <p className="subtitle">Real-time insights for product leaders</p>
 
           {/* Main navigation tabs */}
           <div className="main-tabs" role="tablist" aria-label="Insights navigation">
@@ -512,7 +538,7 @@ export default function Dashboard() {
                       return (
                         <button
                           key={category}
-                          className={`filter-btn ${selectedCategory === category ? 'active' : ''}`}
+                          className={`filter-btn filter-btn-${category} ${selectedCategory === category ? 'active' : ''}`}
                           onClick={() => setSelectedCategory(category)}
                           role="radio"
                           aria-checked={selectedCategory === category}
@@ -540,14 +566,39 @@ export default function Dashboard() {
           )}
 
           {loading ? (
-            <div className="loading">
-              <div className="spinner"></div>
-              <p>Loading articles...</p>
+            <div className="articles-container">
+              <div className="articles-grid">
+                {[...Array(6)].map((_, i) => (
+                  <div key={i} className="skeleton-card">
+                    <div className="skeleton-header">
+                      <div className="skeleton-badge"></div>
+                      <div className="skeleton-date"></div>
+                    </div>
+                    <div className="skeleton-image"></div>
+                    <div className="skeleton-title"></div>
+                    <div className="skeleton-title" style={{ width: '85%' }}></div>
+                    <div className="skeleton-text" style={{ width: '100%' }}></div>
+                    <div className="skeleton-text" style={{ width: '95%' }}></div>
+                    <div className="skeleton-text" style={{ width: '88%' }}></div>
+                    <div className="skeleton-text" style={{ width: '70%' }}></div>
+                    <div className="skeleton-link"></div>
+                  </div>
+                ))}
+              </div>
             </div>
           ) : articles.length === 0 ? (
             <div className="empty-state">
+              <div className="empty-state-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
+                  <line x1="9" y1="10" x2="15" y2="10" />
+                </svg>
+              </div>
               <h2>No articles found</h2>
-              <p>Try adjusting your filters. Articles are automatically refreshed daily at 8am EST.</p>
+              <p>No articles match your current filter selection. Try selecting a different source or category.</p>
+              <div className="empty-state-hint">
+                <strong>Tip:</strong> Articles refresh automatically on <strong>Mon & Thu at 8am EST</strong>
+              </div>
             </div>
           ) : (
             <div className="articles-container">

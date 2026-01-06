@@ -1,8 +1,28 @@
-import { memo } from 'react';
+import { memo, useState, useEffect, useRef } from 'react';
 import { format, formatDistanceToNow } from 'date-fns';
 import './ArticleCard.css';
 
 function ArticleCard({ article }) {
+  const [isVisible, setIsVisible] = useState(false);
+  const cardRef = useRef(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.1, rootMargin: '50px' }
+    );
+
+    if (cardRef.current) {
+      observer.observe(cardRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, []);
   const articleDate = new Date(article.pubDate);
   const now = new Date();
   const hoursSincePublished = (now - articleDate) / (1000 * 60 * 60);
@@ -53,8 +73,11 @@ function ArticleCard({ article }) {
     }
   };
 
+  // Map category to CSS class
+  const categoryClass = article.category || 'mortgage';
+
   return (
-    <div className="article-card">
+    <div ref={cardRef} className={`article-card category-${categoryClass}${isVisible ? ' visible' : ''}`}>
       <div className="article-header">
         <span className="article-source">{article.source}</span>
         <div className="article-meta">

@@ -38,7 +38,14 @@ export default function InsightsSummary({ insights, loading, error, multiDomain 
         </div>
         <div className="insights-loading">
           <div className="spinner"></div>
-          <p>Analyzing articles with AI...</p>
+          <p>
+            Analyzing articles with AI
+            <span className="loading-dots">
+              <span></span>
+              <span></span>
+              <span></span>
+            </span>
+          </p>
         </div>
       </div>
     );
@@ -104,7 +111,7 @@ export default function InsightsSummary({ insights, loading, error, multiDomain 
               </button>
               {insights.competitorIntel && (
                 <button
-                  className={`domain-tab ${activeDomain === 'competitorIntel' ? 'active' : ''}`}
+                  className={`domain-tab competitor-intel ${activeDomain === 'competitorIntel' ? 'active' : ''}`}
                   onClick={() => {
                     setActiveDomain('competitorIntel');
                     setCurrentSlide(0);

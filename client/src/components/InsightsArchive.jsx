@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getArchivedInsights, getArchivedInsightById } from '../services/api';
+import { getArchivedInsights, getArchivedInsightById, exportInsightsCSV } from '../services/api';
 import { formatDateTime, formatCategoryName, getTodayString } from '../utils/formatting';
 import './InsightsArchive.css';
 
@@ -12,6 +12,7 @@ export default function InsightsArchive() {
   const [dateFilter, setDateFilter] = useState('');
   const [expandedId, setExpandedId] = useState(null);
   const [expandedDetails, setExpandedDetails] = useState({});
+  const [exporting, setExporting] = useState(false);
 
   // Load all archives on mount and when category changes
   useEffect(() => {
@@ -92,12 +93,43 @@ export default function InsightsArchive() {
     }
   }
 
+  // Export insights as CSV
+  async function handleExport() {
+    try {
+      setExporting(true);
+      const filters = {};
+      if (categoryFilter) filters.category = categoryFilter;
+      if (dateFilter) {
+        filters.startDate = dateFilter;
+        filters.endDate = dateFilter;
+      }
+      await exportInsightsCSV(filters);
+    } catch (err) {
+      console.error('Error exporting insights:', err);
+      setError('Failed to export insights. Please try again.');
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <div className="insights-archive">
       {/* Header */}
       <div className="archive-header">
-        <h2>Insights Archive</h2>
-        <p className="archive-subtitle">Browse past insights by category</p>
+        <div className="archive-header-top">
+          <div>
+            <h2>Insights Archive</h2>
+            <p className="archive-subtitle">Browse past insights by category</p>
+          </div>
+          <button
+            className="export-btn"
+            onClick={handleExport}
+            disabled={exporting}
+            title="Export insights as CSV for roadmap planning"
+          >
+            {exporting ? 'Exporting...' : 'Export CSV'}
+          </button>
+        </div>
       </div>
 
       {/* Filter Bar with Category Chips and Date Picker */}
