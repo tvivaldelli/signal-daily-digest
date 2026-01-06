@@ -3,7 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { getArticles, getInsights, getTodaysInsights, saveInsights, clearInsights, clearArchivedInsights, getArchivedInsights, getArchivedInsightById, searchArchivedInsights } from './db.js';
+import { getArticles, getInsights, getTodaysInsights, saveInsights, clearInsights, clearArchivedInsights, getArchivedInsights, getArchivedInsightById, searchArchivedInsights, getAllInsightsForExport } from './db.js';
 import { fetchAllFeeds, getSources } from './rssFetcher.js';
 import { initScheduler } from './scheduler.js';
 import { generateInsights } from './insightsGenerator.js';
@@ -415,6 +415,166 @@ app.get('/api/insights/search', async (req, res) => {
 });
 
 /**
+ * GET /api/insights/export
+ * Export all insights as CSV for roadmap planning
+ * Query params: category, startDate, endDate
+ */
+app.get('/api/insights/export', async (req, res) => {
+  try {
+    const filters = {
+      category: req.query.category,
+      startDate: req.query.startDate,
+      endDate: req.query.endDate
+    };
+
+    const insights = await getAllInsightsForExport(filters);
+
+    console.log(`[Export] Found ${insights.length} insights to export`);
+    if (insights.length > 0) {
+      console.log(`[Export] Sample insight structure:`, JSON.stringify({
+        tldr: insights[0].tldr?.slice?.(0, 1) || insights[0].tldr,
+        themes: insights[0].themes?.slice?.(0, 1) || insights[0].themes,
+        recommendedActions: insights[0].recommendedActions?.slice?.(0, 1) || insights[0].recommendedActions
+      }, null, 2));
+    }
+
+    if (insights.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'No insights found',
+        message: 'No insights found matching the specified filters'
+      });
+    }
+
+    // Helper to format category name
+    const formatCategory = (cat) => {
+      if (!cat) return '';
+      return cat.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+    };
+
+    // Helper to escape CSV fields
+    const escapeCSV = (field) => {
+      if (field === null || field === undefined) return '';
+      const str = String(field);
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    // CSV header
+    const headers = ['date', 'category', 'type', 'title', 'description', 'rationale', 'priority', 'source_theme'];
+    const rows = [headers.join(',')];
+
+    // Helper to ensure we have an array (handles JSONB strings, objects, etc.)
+    const ensureArray = (val) => {
+      if (!val) return [];
+      if (Array.isArray(val)) return val;
+      if (typeof val === 'string') {
+        try {
+          const parsed = JSON.parse(val);
+          return Array.isArray(parsed) ? parsed : [];
+        } catch {
+          return [];
+        }
+      }
+      return [];
+    };
+
+    // Flatten insights into CSV rows
+    for (const insight of insights) {
+      const date = new Date(insight.generatedAt).toISOString().split('T')[0];
+      const category = formatCategory(insight.category);
+
+      const tldrItems = ensureArray(insight.tldr);
+      const actions = ensureArray(insight.recommendedActions);
+      const themes = ensureArray(insight.themes);
+
+      // Add TL;DR items
+      for (const item of tldrItems) {
+        const text = typeof item === 'string' ? item : (item.text || item.content || JSON.stringify(item));
+        rows.push([
+          escapeCSV(date),
+          escapeCSV(category),
+          escapeCSV('TL;DR'),
+          escapeCSV('Summary'),
+          escapeCSV(text),
+          escapeCSV(''),
+          escapeCSV(''),
+          escapeCSV('')
+        ].join(','));
+      }
+
+      // Add Recommended Actions
+      for (const action of actions) {
+        rows.push([
+          escapeCSV(date),
+          escapeCSV(category),
+          escapeCSV('Recommended Action'),
+          escapeCSV(action.category || ''),
+          escapeCSV(action.action || ''),
+          escapeCSV(action.rationale || ''),
+          escapeCSV(action.priority || ''),
+          escapeCSV('')
+        ].join(','));
+      }
+
+      // Add Theme Insights
+      for (const theme of themes) {
+        const themeInsights = ensureArray(theme.insights);
+        const themeActions = ensureArray(theme.actions);
+
+        // Add theme insights
+        for (const themeInsight of themeInsights) {
+          const text = typeof themeInsight === 'string' ? themeInsight : (themeInsight.text || themeInsight.content || '');
+          rows.push([
+            escapeCSV(date),
+            escapeCSV(category),
+            escapeCSV('Theme Insight'),
+            escapeCSV(theme.name || ''),
+            escapeCSV(text),
+            escapeCSV(''),
+            escapeCSV(''),
+            escapeCSV('')
+          ].join(','));
+        }
+
+        // Add theme actions
+        for (const action of themeActions) {
+          rows.push([
+            escapeCSV(date),
+            escapeCSV(category),
+            escapeCSV('Theme Action'),
+            escapeCSV(action.category || theme.name || ''),
+            escapeCSV(action.action || ''),
+            escapeCSV(action.rationale || ''),
+            escapeCSV(action.priority || ''),
+            escapeCSV(theme.name || '')
+          ].join(','));
+        }
+      }
+    }
+
+    const csv = rows.join('\n');
+    const filename = `insights-export-${new Date().toISOString().split('T')[0]}.csv`;
+
+    console.log(`[Export] Generated CSV with ${rows.length} rows (including header)`);
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csv);
+
+  } catch (error) {
+    console.error('Error exporting insights:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to export insights',
+      message: error.message
+    });
+  }
+});
+
+/**
  * POST /api/insights/refresh
  * Force refresh insights (clears cache and optionally regenerates)
  * Password protected with 1-hour cooldown
@@ -553,7 +713,8 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`   POST /api/insights - Generate AI insights`);
   console.log(`   GET  /api/insights/archive - Browse archived insights`);
   console.log(`   GET  /api/insights/archive/:id - Get specific archived insight`);
-  console.log(`   GET  /api/insights/search?q=keyword - Search archived insights\n`);
+  console.log(`   GET  /api/insights/search?q=keyword - Search archived insights`);
+  console.log(`   GET  /api/insights/export - Export insights as CSV\n`);
 
   // Initialize scheduler
   initScheduler();

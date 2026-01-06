@@ -183,4 +183,43 @@ export async function getRefreshStatus() {
   }
 }
 
+/**
+ * Export insights as CSV file download
+ * @param {Object} filters - { category, startDate, endDate }
+ */
+export async function exportInsightsCSV(filters = {}) {
+  try {
+    const params = new URLSearchParams();
+
+    if (filters.category) params.append('category', filters.category);
+    if (filters.startDate) params.append('startDate', filters.startDate);
+    if (filters.endDate) params.append('endDate', filters.endDate);
+
+    const url = `${API_BASE_URL}/api/insights/export?${params.toString()}`;
+
+    // Trigger browser download
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Export failed');
+    }
+
+    const blob = await response.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = `insights-export-${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(downloadUrl);
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error exporting insights:', error);
+    throw error;
+  }
+}
+
 export default api;
