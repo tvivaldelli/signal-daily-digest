@@ -19,7 +19,7 @@ export const digestState = {
 /**
  * Run the full daily digest pipeline
  */
-async function runDailyDigest() {
+export async function runDailyDigest() {
   const startTime = Date.now();
   console.log(`\n[Signal] Starting daily digest pipeline at ${new Date().toISOString()}`);
 
