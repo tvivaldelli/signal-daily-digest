@@ -1,12 +1,11 @@
 {
-  "name": "nodejs-blank-repl",
-  "version": "1.0.0",
-  "description": "A blank Node.js project",
+  "name": "signal",
+  "version": "2.0.0",
+  "description": "Daily email digest of mortgage industry intelligence powered by AI",
   "main": "index.js",
   "scripts": {
     "start": "cd server && npm start",
-    "build": "cd client && npm install && npm run build",
-    "deploy": "npm run build && cd server && npm start"
+    "migrate": "cd server && node migrate-archive.js"
   },
   "keywords": [],
   "author": "",

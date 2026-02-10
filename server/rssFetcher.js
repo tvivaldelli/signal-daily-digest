@@ -1,8 +1,8 @@
 import Parser from 'rss-parser';
 import { readFile } from 'fs/promises';
-import { summarizeArticle } from './claudeSummarizer.js';
 import { saveArticle } from './db.js';
 import { decode } from 'html-entities';
+import { scrapeRocketPressReleases, scrapeBlendNewsroom, scrapeICEMortgageTech } from './newsroomScraper.js';
 
 const parser = new Parser({
   customFields: {
@@ -18,12 +18,10 @@ const parser = new Parser({
   }
 });
 
-// Cached sources configuration (loaded once on first request)
 let cachedSources = null;
 
 /**
  * Simple concurrency limiter for parallel execution
- * @param {number} concurrency - Max parallel executions
  */
 function createLimiter(concurrency) {
   let active = 0;
@@ -48,9 +46,6 @@ function createLimiter(concurrency) {
   });
 }
 
-/**
- * Sleep helper for retry delays
- */
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
@@ -58,40 +53,26 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
  */
 function extractYouTubeVideoId(url) {
   if (!url) return null;
-
-  // Match patterns like:
-  // - https://www.youtube.com/watch?v=VIDEO_ID
-  // - https://www.youtube.com/shorts/VIDEO_ID
-  // - https://youtu.be/VIDEO_ID
   const patterns = [
     /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/,
     /youtube\.com\/v\/([a-zA-Z0-9_-]{11})/
   ];
-
   for (const pattern of patterns) {
     const match = url.match(pattern);
-    if (match && match[1]) {
-      return match[1];
-    }
+    if (match && match[1]) return match[1];
   }
-
   return null;
 }
 
 /**
- * Normalize YouTube thumbnail URL to use standard domain
+ * Normalize YouTube thumbnail URL
  */
 function normalizeYouTubeThumbnailUrl(url) {
   if (!url) return url;
-
-  // Convert i1/i2/i3/i4.ytimg.com to img.youtube.com for reliability
   const match = url.match(/https?:\/\/i[1-4]\.ytimg\.com\/vi\/([a-zA-Z0-9_-]+)\/([^\/]+\.jpg)/);
   if (match) {
-    const videoId = match[1];
-    const quality = match[2];
-    return `https://img.youtube.com/vi/${videoId}/${quality}`;
+    return `https://img.youtube.com/vi/${match[1]}/${match[2]}`;
   }
-
   return url;
 }
 
@@ -101,7 +82,6 @@ function normalizeYouTubeThumbnailUrl(url) {
 function extractImageUrl(item) {
   let imageUrl = null;
 
-  // Try media:group > media:thumbnail (YouTube format)
   if (item['media:group'] && item['media:group']['media:thumbnail']) {
     const thumbnail = item['media:group']['media:thumbnail'];
     if (Array.isArray(thumbnail) && thumbnail[0] && thumbnail[0].$) {
@@ -111,22 +91,18 @@ function extractImageUrl(item) {
     }
   }
 
-  // Try media:thumbnail (YouTube, media RSS)
   if (!imageUrl && item['media:thumbnail'] && item['media:thumbnail'].$) {
     imageUrl = item['media:thumbnail'].$.url;
   }
 
-  // Try media:content (alternative media RSS format)
   if (!imageUrl && item['media:content'] && item['media:content'].$) {
     imageUrl = item['media:content'].$.url;
   }
 
-  // Try enclosure (standard RSS image)
   if (!imageUrl && item.enclosure && item.enclosure.url) {
     imageUrl = item.enclosure.url;
   }
 
-  // Try itunes:image (podcast artwork)
   if (!imageUrl && item['itunes:image']) {
     if (typeof item['itunes:image'] === 'string') {
       imageUrl = item['itunes:image'];
@@ -135,7 +111,6 @@ function extractImageUrl(item) {
     }
   }
 
-  // Fallback: Try to construct YouTube thumbnail from video ID
   if (!imageUrl && item.link) {
     const videoId = extractYouTubeVideoId(item.link);
     if (videoId) {
@@ -143,7 +118,6 @@ function extractImageUrl(item) {
     }
   }
 
-  // Normalize YouTube URLs to use standard domain
   if (imageUrl) {
     imageUrl = normalizeYouTubeThumbnailUrl(imageUrl);
   }
@@ -155,15 +129,11 @@ function extractImageUrl(item) {
  * Load news sources from configuration (cached after first load)
  */
 async function loadSources() {
-  // Return cached sources if available
-  if (cachedSources) {
-    return cachedSources;
-  }
-
+  if (cachedSources) return cachedSources;
   try {
     const data = await readFile('./sources.json', 'utf8');
     cachedSources = JSON.parse(data);
-    console.log('[RSS] ✓ Sources loaded and cached');
+    console.log('[RSS] Sources loaded and cached');
     return cachedSources;
   } catch (error) {
     console.error('Error loading sources.json:', error);
@@ -173,11 +143,10 @@ async function loadSources() {
 
 /**
  * Fetch RSS feed from a single source with retry logic
- * @param {Object} source - RSS source configuration
- * @param {number} maxRetries - Maximum retry attempts (default: 3)
  */
 async function fetchRSS(source, maxRetries = 3) {
   let lastError = null;
+  const isYouTube = source.rss?.includes('youtube.com/feeds/');
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -186,36 +155,30 @@ async function fetchRSS(source, maxRetries = 3) {
 
       const articles = [];
 
-      for (const item of feed.items.slice(0, 10)) { // Limit to 10 most recent items
+      for (const item of feed.items.slice(0, 10)) {
         try {
-          // Extract content
           const content = item['content:encoded'] || item.description || item.summary || '';
+          const cleanContent = decode(content.replace(/<[^>]*>/g, ''));
+          const quickSummary = isYouTube ? '' : cleanContent.substring(0, 300).trim() + '...';
 
-          // Use quick summary from content (no Claude to avoid timeouts)
-          const cleanContent = decode(content.replace(/<[^>]*>/g, '')); // Remove HTML tags and decode entities
-          const quickSummary = cleanContent
-            .substring(0, 300)
-            .trim() + '...';
-
-          // Extract image URL from various possible sources
           const imageUrl = extractImageUrl(item);
 
           const article = {
-            title: decode(item.title || ''), // Decode HTML entities in title
+            title: decode(item.title || ''),
             link: item.link,
             pubDate: item.pubDate || item.isoDate || new Date().toISOString(),
             source: source.name,
             category: source.category || '',
+            type: isYouTube ? 'youtube' : 'article',
             summary: quickSummary,
-            originalContent: cleanContent.substring(0, 500), // Store first 500 chars
+            originalContent: isYouTube ? '' : cleanContent.substring(0, 500),
             imageUrl: imageUrl
           };
 
-          // Save to database
           await saveArticle(article);
           articles.push(article);
 
-          console.log(`✓ Saved: ${item.title}`);
+          console.log(`  Saved: ${item.title}`);
         } catch (error) {
           console.error(`Error processing article "${item.title}":`, error.message);
         }
@@ -227,7 +190,6 @@ async function fetchRSS(source, maxRetries = 3) {
       console.error(`Error fetching RSS from ${source.name} (attempt ${attempt}/${maxRetries}):`, error.message);
 
       if (attempt < maxRetries) {
-        // Exponential backoff: 1s, 2s, 4s...
         const delay = Math.pow(2, attempt - 1) * 1000;
         console.log(`  Retrying in ${delay / 1000}s...`);
         await sleep(delay);
@@ -240,24 +202,41 @@ async function fetchRSS(source, maxRetries = 3) {
 }
 
 /**
- * Fetch all RSS feeds from configured sources (parallel with concurrency limit)
+ * Fetch all RSS feeds + run newsroom scrapers
  */
 export async function fetchAllFeeds() {
   const config = await loadSources();
   const startTime = Date.now();
 
-  console.log(`\nFetching from ${config.sources.length} sources (parallel, max 5 concurrent)...`);
+  console.log(`\nFetching from ${config.sources.length} RSS sources + 3 scrapers (parallel, max 5 concurrent)...`);
 
-  // Use concurrency limiter to fetch up to 5 feeds in parallel
+  // Fetch RSS feeds with concurrency limiter
   const limit = createLimiter(5);
-  const results = await Promise.all(
+  const rssResults = await Promise.all(
     config.sources.map(source => limit(() => fetchRSS(source)))
   );
 
-  const allArticles = results.flat();
+  // Run all 3 newsroom scrapers in parallel
+  const [rocketArticles, blendArticles, iceArticles] = await Promise.all([
+    scrapeRocketPressReleases(10),
+    scrapeBlendNewsroom(10),
+    scrapeICEMortgageTech(10)
+  ]);
+
+  // Save scraped articles to DB
+  const scraperArticles = [...rocketArticles, ...blendArticles, ...iceArticles];
+  for (const article of scraperArticles) {
+    try {
+      await saveArticle(article);
+    } catch (error) {
+      console.error(`Error saving scraped article "${article.title}":`, error.message);
+    }
+  }
+
+  const allArticles = [...rssResults.flat(), ...scraperArticles];
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
-  console.log(`\n✓ Total articles fetched: ${allArticles.length} in ${elapsed}s\n`);
+  console.log(`\nTotal articles fetched: ${allArticles.length} (${rssResults.flat().length} RSS + ${scraperArticles.length} scraped) in ${elapsed}s\n`);
   return allArticles;
 }
 

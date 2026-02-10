@@ -7,12 +7,6 @@
       "rss": "https://www.housingwire.com/feed/"
     },
     {
-      "name": "Redfin News",
-      "category": "mortgage",
-      "url": "https://www.redfin.com/news",
-      "rss": "https://www.redfin.com/news/feed/"
-    },
-    {
       "name": "Rob Chrisman Commentary",
       "category": "mortgage",
       "url": "https://www.robchrisman.com/",
@@ -49,6 +43,12 @@
       "rss": "https://www.producttalk.org/feed/"
     },
     {
+      "name": "One Useful Thing (Ethan Mollick)",
+      "category": "product-management",
+      "url": "https://www.oneusefulthing.org/",
+      "rss": "https://www.oneusefulthing.org/feed"
+    },
+    {
       "name": "Lenny's Podcast",
       "category": "product-management",
       "url": "https://www.youtube.com/@LennysPodcast",
@@ -65,24 +65,6 @@
       "category": "product-management",
       "url": "https://www.youtube.com/@SupraInsider",
       "rss": "https://www.youtube.com/feeds/videos.xml?channel_id=UCfAxlqJfB6AwqFtbmxPUELQ"
-    },
-    {
-      "name": "Finovate",
-      "category": "competitor-intel",
-      "url": "https://finovate.com/",
-      "rss": "https://finovate.com/feed/"
-    },
-    {
-      "name": "TechCrunch Fintech",
-      "category": "competitor-intel",
-      "url": "https://techcrunch.com/tag/fintech/",
-      "rss": "https://techcrunch.com/tag/fintech/feed/"
-    },
-    {
-      "name": "Crunchbase News",
-      "category": "competitor-intel",
-      "url": "https://news.crunchbase.com/",
-      "rss": "https://news.crunchbase.com/feed/"
     },
     {
       "name": "Rocket Companies (SA)",
