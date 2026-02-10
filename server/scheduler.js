@@ -1,73 +1,102 @@
 import cron from 'node-cron';
 import { fetchAllFeeds } from './rssFetcher.js';
-import { cleanOldArticles, getArticles, saveInsights } from './db.js';
-import { generateInsights } from './insightsGenerator.js';
+import { getArticles, cleanOldArticles } from './db.js';
+import { generateInsights, generateWeeklySummary } from './insightsGenerator.js';
+import { sendDigestEmail } from './emailSender.js';
+import { appendDigest, readRecentDigests } from './archiver.js';
 
 /**
- * Generate and save insights for a single category
+ * In-memory state for the /health endpoint
  */
-async function generateCategoryInsights(articles, category, displayName) {
-  const categoryArticles = articles.filter(a => a.category === category);
-  if (categoryArticles.length === 0) {
-    console.log(`[Scheduler] No articles for ${displayName}, skipping`);
-    return null;
-  }
-
-  console.log(`[Scheduler] Generating insights for ${displayName} (${categoryArticles.length} articles)...`);
-  const insights = await generateInsights(categoryArticles, category);
-  await saveInsights(insights, category);
-  console.log(`[Scheduler] ${displayName} insights cached`);
-  return insights;
-}
+export const digestState = {
+  lastDigestRun: null,
+  articleCount: 0,
+  emailStatus: null,
+  nextScheduledRun: null,
+  lastError: null
+};
 
 /**
- * Fetch and cache articles and insights
+ * Run the full daily digest pipeline
  */
-async function fetchAndCacheContent() {
-  console.log('\n[Scheduler] Running news fetch...');
+async function runDailyDigest() {
+  const startTime = Date.now();
+  console.log(`\n[Signal] Starting daily digest pipeline at ${new Date().toISOString()}`);
+
   try {
+    // 1. Fetch RSS + scrape newsrooms
     await fetchAllFeeds();
-    console.log('[Scheduler] Fetch completed successfully');
 
-    // Pre-generate insights for each category
-    console.log('[Scheduler] Pre-generating insights by category (parallel)...');
-    const articles = await getArticles({});
+    // 2. Query articles from last 24 hours
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const articles = await getArticles({ startDate: since.toISOString() });
 
-    if (articles && articles.length > 0) {
-      const startTime = Date.now();
+    digestState.articleCount = articles.length;
+    console.log(`[Signal] ${articles.length} articles from last 24 hours`);
 
-      // Generate insights for all categories in parallel
-      await Promise.all([
-        generateCategoryInsights(articles, 'mortgage', 'Mortgage'),
-        generateCategoryInsights(articles, 'product-management', 'Product Management'),
-        generateCategoryInsights(articles, 'competitor-intel', 'Competitor Intel')
-      ]);
-
-      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-      console.log(`[Scheduler] All insights pre-generated and cached successfully in ${elapsed}s`);
+    // 3. Zero articles → send "nothing new" email, skip Claude
+    if (articles.length === 0) {
+      const emptyDigest = {
+        date: new Date().toISOString().split('T')[0],
+        top_insights: [],
+        competitive_signals: [],
+        worth_reading: [],
+        nothing_notable: true,
+        article_count: 0,
+        source_count: 0
+      };
+      const emailResult = await sendDigestEmail(emptyDigest);
+      digestState.emailStatus = emailResult.status;
+      digestState.lastDigestRun = new Date().toISOString();
+      console.log(`[Signal] No articles found. Email: ${emailResult.status}`);
+      return;
     }
+
+    // 4. Generate insights via Claude
+    const digest = await generateInsights(articles);
+
+    // 5. Friday check → weekly summary
+    let weeklyBullets = null;
+    const today = new Date();
+    if (today.getDay() === 5) { // Friday
+      console.log('[Signal] Friday detected — generating weekly summary');
+      const recentDigests = await readRecentDigests(5);
+      weeklyBullets = await generateWeeklySummary(recentDigests);
+    }
+
+    // 6. Send email
+    const emailResult = await sendDigestEmail(digest, weeklyBullets);
+    digestState.emailStatus = emailResult.status;
+
+    // 7. Archive to JSONL (always, even if email fails)
+    await appendDigest(digest);
+
+    // 8. Update state
+    digestState.lastDigestRun = new Date().toISOString();
+    digestState.lastError = null;
+
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`[Signal] Complete in ${elapsed}s — ${articles.length} articles, ${digest.top_insights?.length || 0} insights, email: ${emailResult.status}`);
+
   } catch (error) {
-    console.error('[Scheduler] Error during fetch:', error);
+    digestState.lastError = error.message;
+    console.error('[Signal] Pipeline error:', error.message);
   }
 }
 
 /**
- * Initialize scheduled tasks
+ * Initialize cron jobs and optional startup run
  */
 export function initScheduler() {
-  // Fetch articles immediately on startup
-  console.log('[Scheduler] Performing initial fetch on startup...');
-  fetchAndCacheContent();
-
-  // Fetch news twice weekly: Monday and Thursday at 8 AM EST
-  cron.schedule('0 8 * * 1,4', async () => {
-    console.log('\n[Scheduler] Running bi-weekly news fetch (Mon/Thu 8 AM)...');
-    await fetchAndCacheContent();
+  // Daily digest at 6:30 AM ET
+  cron.schedule('30 6 * * *', () => {
+    console.log('\n[Scheduler] Running daily digest (6:30 AM ET)...');
+    runDailyDigest();
   }, {
     timezone: 'America/New_York'
   });
 
-  // Clean old articles weekly on Sunday at midnight
+  // Weekly cleanup on Sunday midnight ET
   cron.schedule('0 0 * * 0', async () => {
     console.log('\n[Scheduler] Running weekly cleanup...');
     try {
@@ -80,7 +109,20 @@ export function initScheduler() {
     timezone: 'America/New_York'
   });
 
-  console.log('✓ Scheduler initialized');
-  console.log('  - Bi-weekly fetch: Monday & Thursday 8:00 AM EST');
-  console.log('  - Weekly cleanup: Sunday 12:00 AM EST\n');
+  // Calculate next scheduled run for state
+  const now = new Date();
+  const nextRun = new Date(now);
+  nextRun.setHours(6, 30, 0, 0);
+  if (nextRun <= now) nextRun.setDate(nextRun.getDate() + 1);
+  digestState.nextScheduledRun = nextRun.toISOString();
+
+  console.log('[Scheduler] Initialized');
+  console.log('  - Daily digest: 6:30 AM ET');
+  console.log('  - Weekly cleanup: Sunday 12:00 AM ET');
+
+  // Optional startup run
+  if (process.env.RUN_ON_STARTUP === 'true') {
+    console.log('[Scheduler] RUN_ON_STARTUP=true, running digest now...');
+    runDailyDigest();
+  }
 }

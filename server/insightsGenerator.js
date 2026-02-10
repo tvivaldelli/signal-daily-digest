@@ -4,12 +4,8 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY
 });
 
-// Timeout duration for Claude API calls (3 minutes for large article sets)
 const API_TIMEOUT_MS = 180000;
 
-/**
- * Create a timeout promise that rejects after specified milliseconds
- */
 function createTimeout(ms) {
   return new Promise((_, reject) => {
     setTimeout(() => reject(new Error(`Claude API request timed out after ${ms / 1000} seconds`)), ms);
@@ -17,366 +13,302 @@ function createTimeout(ms) {
 }
 
 /**
- * Generate themed insights from a collection of articles
- * @param {Array} articles - Array of article objects with title, summary, link, source
- * @param {string} category - Category for prompt selection (mortgage, product-management, competitor-intel)
- * @returns {Promise<Object>} - Structured insights organized by theme
+ * Generate a unified daily digest from all articles (no category split)
+ * @param {Array} articles - All articles from the last 24 hours
+ * @returns {Promise<Object>} Digest object matching the email template format
  */
-export async function generateInsights(articles, category = null) {
-  try {
-    // Handle empty or small article sets
-    if (!articles || articles.length === 0) {
-      return {
-        success: false,
-        message: 'No articles to analyze',
-        themes: []
-      };
-    }
+export async function generateInsights(articles) {
+  if (!articles || articles.length === 0) {
+    return {
+      date: new Date().toISOString().split('T')[0],
+      top_insights: [],
+      competitive_signals: [],
+      worth_reading: [],
+      nothing_notable: true,
+      article_count: 0,
+      source_count: 0
+    };
+  }
 
-    // Check if API key is set
-    if (!process.env.ANTHROPIC_API_KEY) {
-      console.log('Claude API key not configured, returning fallback insights');
-      return getFallbackInsights(articles);
-    }
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.log('[Insights] No API key configured, returning nothing-notable');
+    return {
+      date: new Date().toISOString().split('T')[0],
+      top_insights: [],
+      competitive_signals: [],
+      worth_reading: [],
+      nothing_notable: true,
+      article_count: articles.length,
+      source_count: new Set(articles.map(a => a.source)).size
+    };
+  }
 
-    // Prepare article data for Claude (limit to avoid token limits)
-    const articlesToAnalyze = articles.slice(0, 50);
-    const articleSummaries = articlesToAnalyze.map((article, index) => ({
-      id: index,
+  // Separate content articles from YouTube video titles
+  const contentArticles = articles.filter(a => a.type !== 'youtube');
+  const youtubeArticles = articles.filter(a => a.type === 'youtube');
+
+  // Group content articles by category
+  const grouped = {};
+  for (const article of contentArticles) {
+    const cat = article.category || 'uncategorized';
+    if (!grouped[cat]) grouped[cat] = [];
+    grouped[cat].push({
       title: article.title,
       summary: article.summary || article.originalContent?.substring(0, 200) || '',
       source: article.source,
       link: article.link,
       pubDate: article.pubDate
-    }));
+    });
+  }
 
-    const prompt = getPromptForCategory(category, articleSummaries);
+  const sourceCount = new Set(articles.map(a => a.source)).size;
 
-    // Call Claude API with timeout protection
+  let articleBlock = '';
+  for (const [category, items] of Object.entries(grouped)) {
+    articleBlock += `\n## ${category.toUpperCase()} (${items.length} articles)\n`;
+    for (const item of items) {
+      articleBlock += `- **${item.title}** (${item.source})\n  ${item.summary}\n  URL: ${item.link}\n`;
+    }
+  }
+
+  if (youtubeArticles.length > 0) {
+    articleBlock += `\n## YOUTUBE VIDEOS (${youtubeArticles.length} items — titles only, do NOT generate insights from video titles)\n`;
+    for (const item of youtubeArticles) {
+      articleBlock += `- ${item.title} (${item.source}) — ${item.link}\n`;
+    }
+  }
+
+  const prompt = `You are the daily intelligence analyst for a Product Manager at Freedom Mortgage who owns the digital mortgage experience (online applications, servicing portal, mobile app).
+
+CONTEXT:
+- Freedom Mortgage is a top-5 US mortgage servicer
+- Current priorities: digital self-service, AI-assisted underwriting, mobile app engagement
+- Roadmap themes: servicing retention, loss mitigation automation, borrower communication
+- Key competitors: Rocket Mortgage (acquired Mr. Cooper), United Wholesale Mortgage, loanDepot, PennyMac
+- Fintech disruptors: Better, Blend, Figure, Beeline, Tomo, ICE Mortgage Technology
+
+TODAY'S ARTICLES (${contentArticles.length} content articles + ${youtubeArticles.length} videos from ${sourceCount} sources):
+${articleBlock}
+
+FILTERING CRITERIA — Only include in top_insights or competitive_signals if at least ONE:
+1. Directly affects Freedom Mortgage's business or competitive position
+2. Signals a technology shift that could change mortgage origination or servicing
+3. Represents a competitor move that requires a response or creates an opportunity
+4. Provides actionable intelligence for the product roadmap
+
+For worth_reading, also include strong product management content (frameworks, practices, case studies, AI/workflow thinking) even if it has no direct mortgage connection — it informs how the PM works, not just what they work on.
+
+Skip: generic market commentary, rate predictions, political/regulatory speculation without specific impact, content that's behind a paywall with no useful summary.
+
+OUTPUT FORMAT (strict JSON, no markdown fences):
+{
+  "date": "${new Date().toISOString().split('T')[0]}",
+  "top_insights": [
+    {
+      "headline": "One-line insight headline",
+      "explanation": "2-3 sentences: what happened and why it matters",
+      "connection": "How this connects to Freedom's priorities or roadmap",
+      "source": "Source name",
+      "url": "Article URL"
+    }
+  ],
+  "competitive_signals": [
+    {
+      "competitor": "Company name",
+      "signal": "What they did",
+      "implication": "What it means for Freedom"
+    }
+  ],
+  "worth_reading": [
+    {
+      "title": "Article title",
+      "reason": "Why it's worth 5 minutes",
+      "url": "URL"
+    }
+  ],
+  "nothing_notable": false,
+  "article_count": ${articles.length},
+  "source_count": ${sourceCount}
+}
+
+RULES:
+- top_insights: Exactly 3 (or fewer if truly nothing qualifies). Quality over quantity.
+- competitive_signals: 0-3. Only include if a specific competitor is mentioned. Empty array is fine.
+- worth_reading: 3-5 links. Aim for a mix: 2-3 product management articles (from SVPG, Teresa Torres, Lenny's Newsletter, Ethan Mollick, or similar PM/AI sources) plus any standout mortgage or competitive articles. PM content is always valuable here even without a mortgage connection. YouTube videos can go here too.
+- If genuinely nothing is notable today, set nothing_notable: true and leave arrays empty.
+- Never fabricate URLs — only use URLs from the articles provided.
+- Do not generate insights from YouTube video titles alone.
+
+Return ONLY the JSON object, no other text.`;
+
+  try {
     const apiRequest = anthropic.messages.create({
       model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 8000, // Increased for more detailed insights
-      messages: [{
-        role: 'user',
-        content: prompt
-      }]
+      max_tokens: 8000,
+      temperature: 0.25,
+      messages: [{ role: 'user', content: prompt }]
     });
 
-    const message = await Promise.race([
-      apiRequest,
-      createTimeout(API_TIMEOUT_MS)
-    ]);
-
-    // Extract and parse Claude's response
+    const message = await Promise.race([apiRequest, createTimeout(API_TIMEOUT_MS)]);
     const responseText = message.content[0].text.trim();
 
-    // Try to extract JSON from the response
-    let insightsData;
+    // Parse JSON (handle possible code fences)
+    let digest;
     try {
-      // Look for JSON in code blocks or raw text
       const jsonMatch = responseText.match(/```json\n?([\s\S]*?)\n?```/) ||
                         responseText.match(/\{[\s\S]*\}/);
       const jsonText = jsonMatch ? (jsonMatch[1] || jsonMatch[0]) : responseText;
-      insightsData = JSON.parse(jsonText);
+      digest = JSON.parse(jsonText);
     } catch (parseError) {
-      console.error('Error parsing Claude response:', parseError);
-      return getFallbackInsights(articles);
+      console.error('[Insights] Error parsing Claude response:', parseError.message);
+      return {
+        date: new Date().toISOString().split('T')[0],
+        top_insights: [],
+        competitive_signals: [],
+        worth_reading: [],
+        nothing_notable: true,
+        article_count: articles.length,
+        source_count: sourceCount
+      };
     }
 
-    // Map article IDs back to actual articles
-    const themesWithArticles = insightsData.themes.map(theme => ({
-      ...theme,
-      insights: theme.insights.map(insight => ({
-        text: insight.text,
-        articles: insight.articleIds
-          .map(id => articleSummaries[id])
-          .filter(a => a) // Remove undefined entries
-      }))
-    }));
+    // Ensure required fields
+    digest.date = digest.date || new Date().toISOString().split('T')[0];
+    digest.article_count = articles.length;
+    digest.source_count = sourceCount;
+    digest.top_insights = digest.top_insights || [];
+    digest.competitive_signals = digest.competitive_signals || [];
+    digest.worth_reading = digest.worth_reading || [];
+    digest.nothing_notable = digest.nothing_notable || false;
 
-    // Ensure every source is represented (post-processing)
-    const finalThemes = ensureSourceCoverage(themesWithArticles, articleSummaries);
+    // Deduplicate across sections (priority: insights > signals > worth_reading)
+    // Match on URLs when available, plus source+keyword overlap for items without URLs
+    const usedUrls = new Set();
+    const usedFingerprints = new Set();
 
-    console.log(`[Insights] Generated ${finalThemes.length} themes from ${articles.length} articles`);
-    console.log(`[Insights] TL;DR bullets: ${insightsData.tldr?.length || 0}`);
-    console.log(`[Insights] Recommended actions: ${insightsData.recommendedActions?.length || 0}`);
-
-    // Debug: Log if tldr is missing
-    if (!insightsData.tldr || insightsData.tldr.length === 0) {
-      console.log('[Insights] WARNING: No TL;DR generated by Claude!');
-      console.log('[Insights] Raw response keys:', Object.keys(insightsData));
+    function fingerprint(text) {
+      if (!text) return '';
+      return text.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
     }
 
-    return {
-      success: true,
-      tldr: insightsData.tldr || [], // Include TL;DR bullets
-      recommendedActions: insightsData.recommendedActions || [],
-      themes: finalThemes,
-      articleCount: articles.length,
-      generatedAt: new Date().toISOString()
-    };
+    function overlaps(a, b) {
+      const wordsA = new Set(a.split(' ').filter(w => w.length > 3));
+      const wordsB = new Set(b.split(' ').filter(w => w.length > 3));
+      if (wordsA.size === 0 || wordsB.size === 0) return false;
+      let shared = 0;
+      for (const w of wordsA) { if (wordsB.has(w)) shared++; }
+      return shared >= 2 && shared / Math.min(wordsA.size, wordsB.size) >= 0.4;
+    }
+
+    // Collect fingerprints from top_insights
+    for (const item of digest.top_insights) {
+      if (item.url) usedUrls.add(item.url);
+      const fp = fingerprint(item.headline || item.explanation || '');
+      if (fp) usedFingerprints.add(fp);
+    }
+
+    function isDuplicate(url, text) {
+      if (url && usedUrls.has(url)) return true;
+      const fp = fingerprint(text);
+      if (!fp) return false;
+      for (const used of usedFingerprints) {
+        if (overlaps(fp, used)) return true;
+      }
+      return false;
+    }
+
+    function markUsed(url, text) {
+      if (url) usedUrls.add(url);
+      const fp = fingerprint(text);
+      if (fp) usedFingerprints.add(fp);
+    }
+
+    const prevSignals = digest.competitive_signals.length;
+    digest.competitive_signals = digest.competitive_signals.filter(item => {
+      if (isDuplicate(item.url, item.signal || item.competitor)) return false;
+      markUsed(item.url, item.signal || item.competitor);
+      return true;
+    });
+
+    const prevLinks = digest.worth_reading.length;
+    digest.worth_reading = digest.worth_reading.filter(item => {
+      if (isDuplicate(item.url, item.title)) return false;
+      return true;
+    });
+
+    const removed = (prevSignals - digest.competitive_signals.length) + (prevLinks - digest.worth_reading.length);
+    if (removed > 0) {
+      console.log(`[Insights] Dedup removed ${removed} duplicate(s) from lower-priority sections`);
+    }
+
+    console.log(`[Insights] Generated: ${digest.top_insights.length} insights, ${digest.competitive_signals.length} signals, ${digest.worth_reading.length} links`);
+    return digest;
 
   } catch (error) {
-    console.error('Error generating insights:', error.message);
-    return getFallbackInsights(articles);
+    console.error('[Insights] Error generating insights:', error.message);
+    return {
+      date: new Date().toISOString().split('T')[0],
+      top_insights: [],
+      competitive_signals: [],
+      worth_reading: [],
+      nothing_notable: true,
+      article_count: articles.length,
+      source_count: sourceCount
+    };
   }
 }
 
 /**
- * Ensure every source is represented in the insights (OPTIONAL)
- * Only add if there are significant missing sources (more than 30% uncovered)
+ * Generate a weekly summary from the last 5 daily digests
+ * @param {Array} recentDigests - Array of recent digest objects (newest first)
+ * @returns {Promise<Array<string>>} Array of 3-5 bullet summary strings
  */
-function ensureSourceCoverage(themes, articleSummaries) {
-  // Get all unique sources from articles
-  const allSources = [...new Set(articleSummaries.map(a => a.source))];
+export async function generateWeeklySummary(recentDigests) {
+  if (!recentDigests || recentDigests.length === 0) return [];
 
-  // Find which sources are already represented in insights
-  const representedSources = new Set();
-  themes.forEach(theme => {
-    theme.insights.forEach(insight => {
-      insight.articles.forEach(article => {
-        if (article && article.source) {
-          representedSources.add(article.source);
-        }
-      });
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.log('[Insights] No API key, skipping weekly summary');
+    return [];
+  }
+
+  const digestSummary = recentDigests.map(d => {
+    const insights = (d.top_insights || []).map(i => `- ${i.headline}: ${i.explanation}`).join('\n');
+    const signals = (d.competitive_signals || []).map(s => `- ${s.competitor}: ${s.signal}`).join('\n');
+    return `### ${d.date}\nInsights:\n${insights}\nSignals:\n${signals}`;
+  }).join('\n\n');
+
+  const prompt = `You are a weekly intelligence summarizer for a mortgage industry Product Manager.
+
+Here are the daily digests from this week:
+
+${digestSummary}
+
+Write 3-5 bullet points summarizing the most important patterns, trends, and action items from the entire week. Focus on:
+1. Recurring themes across multiple days
+2. The single most important competitive development
+3. What should be discussed in the next product team meeting
+
+Return ONLY a JSON array of strings (each string is one bullet point). No other text.
+Example: ["Bullet one here", "Bullet two here", "Bullet three here"]`;
+
+  try {
+    const apiRequest = anthropic.messages.create({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 2000,
+      temperature: 0.25,
+      messages: [{ role: 'user', content: prompt }]
     });
-  });
 
-  // Find missing sources
-  const missingSources = allSources.filter(source => !representedSources.has(source));
+    const message = await Promise.race([apiRequest, createTimeout(60000)]);
+    const responseText = message.content[0].text.trim();
 
-  // Only add commentary section if more than 30% of sources are missing
-  const coveragePercent = (representedSources.size / allSources.length) * 100;
+    const jsonMatch = responseText.match(/\[[\s\S]*\]/);
+    const bullets = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
 
-  if (missingSources.length === 0 || coveragePercent >= 70) {
-    console.log(`[Insights] Source coverage: ${Math.round(coveragePercent)}% - skipping commentary section`);
-    return themes; // Good coverage, no need for filler
+    console.log(`[Insights] Weekly summary: ${bullets.length} bullets`);
+    return bullets;
+  } catch (error) {
+    console.error('[Insights] Error generating weekly summary:', error.message);
+    return [];
   }
-
-  console.log(`[Insights] Low coverage (${Math.round(coveragePercent)}%) - adding ${missingSources.length} missing sources`);
-
-  // Only create commentary for truly important missing sources
-  // Skip generic roundup sources
-  const importantMissingSources = missingSources.filter(source =>
-    !source.toLowerCase().includes('newsletter') &&
-    !source.toLowerCase().includes('podcast') &&
-    missingSources.length <= 3 // Only if very few sources missing
-  );
-
-  if (importantMissingSources.length === 0) {
-    return themes;
-  }
-
-  // Create minimal coverage theme
-  const commentaryTheme = {
-    name: 'Additional Insights',
-    icon: '💡',
-    insights: importantMissingSources.map(source => {
-      const sourceArticles = articleSummaries.filter(a => a.source === source);
-      return {
-        text: `${source}: ${sourceArticles.length} article${sourceArticles.length > 1 ? 's' : ''} on industry developments`,
-        articles: sourceArticles.slice(0, 3)
-      };
-    })
-  };
-
-  themes.push(commentaryTheme);
-  return themes;
-}
-
-/**
- * Generate basic fallback insights when Claude API is unavailable
- */
-function getFallbackInsights(articles) {
-  const themes = [];
-
-  // Group articles by source as a simple fallback
-  const sourceGroups = {};
-  articles.forEach(article => {
-    if (!sourceGroups[article.source]) {
-      sourceGroups[article.source] = [];
-    }
-    sourceGroups[article.source].push({
-      id: article.link,
-      title: article.title,
-      summary: article.summary,
-      source: article.source,
-      link: article.link,
-      pubDate: article.pubDate
-    });
-  });
-
-  // Create a theme for each source
-  Object.entries(sourceGroups).forEach(([source, sourceArticles]) => {
-    themes.push({
-      name: `${source} Updates`,
-      icon: '📰',
-      insights: [{
-        text: `${sourceArticles.length} recent article${sourceArticles.length > 1 ? 's' : ''} from ${source}`,
-        articles: sourceArticles.slice(0, 5) // Limit to 5 articles per source
-      }]
-    });
-  });
-
-  return {
-    success: true,
-    themes,
-    articleCount: articles.length,
-    generatedAt: new Date().toISOString(),
-    fallback: true
-  };
-}
-
-/**
- * Get the appropriate prompt based on category
- */
-function getPromptForCategory(category, articleSummaries) {
-  if (category === 'competitor-intel') {
-    return getCompetitorPrompt(articleSummaries);
-  }
-  return getDefaultPrompt(articleSummaries);
-}
-
-/**
- * Default prompt for mortgage and product-management categories
- */
-function getDefaultPrompt(articleSummaries) {
-  return `You are a strategic analyst for a Product Manager at Freedom Mortgage who is responsible for the digital mortgage experience. Analyze these articles to identify the most important strategic themes and actionable intelligence.
-
-Articles:
-${JSON.stringify(articleSummaries, null, 2)}
-
-ANALYSIS REQUIREMENTS:
-
-1. **Top Strategic Actions** (4-6 highest-impact actions):
-   - Focus on competitive differentiation and measurable business impact
-   - Each action must include: specific implementation, expected outcome, and priority level
-   - Categories: Product Innovation | Competitive Intelligence | Customer Experience | Technology & AI
-   - Be specific about HOW to implement, not just WHAT to do
-
-2. **Strategic Themes** (3-4 ONLY - Quality over quantity):
-   - Identify only the MOST IMPORTANT themes with significant strategic implications
-   - Skip minor topics - focus on what truly matters for competitive advantage
-   - For each theme provide DEEP ANALYSIS:
-     * What's happening: Specific trends, data points, statistics from articles
-     * Why it matters: Strategic implications, competitive context, market impact
-     * What to do: Concrete recommendations with expected business outcomes
-     * Supporting evidence: Article IDs and specific quotes/data
-
-ANALYTICAL DEPTH REQUIREMENTS:
-- Every insight must answer "So what?" - explain strategic significance
-- Include specific numbers, percentages, quotes, or data points from articles
-- Identify cause-and-effect relationships and trends
-- Compare/contrast different approaches or perspectives in the articles
-- Highlight competitive threats and opportunities
-- Focus on what gives Freedom Mortgage an edge in digital experience
-
-JSON STRUCTURE:
-{
-  "tldr": [
-    "Concise bullet point 1 (1-2 sentences max, direct statement, no article citations)",
-    "Concise bullet point 2 (1-2 sentences max, direct statement, no article citations)",
-    "Concise bullet point 3 (1-2 sentences max, direct statement, no article citations)"
-  ],
-  "recommendedActions": [
-    {
-      "action": "Specific, measurable action with implementation details",
-      "rationale": "Why this creates competitive advantage (with data/evidence)",
-      "category": "Product Innovation" | "Competitive Intelligence" | "Customer Experience" | "Technology & AI",
-      "priority": "High" | "Medium",
-      "expectedImpact": "Specific business outcome (e.g., reduce drop-off by X%, increase conversion)"
-    }
-  ],
-  "themes": [
-    {
-      "name": "Strategic theme name (concise)",
-      "icon": "📊" | "💻" | "📜" | "🏠" | "🎯" | "⚡" | "🔍" | "💡",
-      "insights": [
-        {
-          "text": "ANALYTICAL insight: What's happening + Why it matters + Strategic implications. Include specific data points, statistics, quotes. 4-6 sentences with depth.",
-          "articleIds": [relevant article IDs]
-        }
-      ],
-      "actions": [
-        {
-          "action": "Specific action with clear implementation path",
-          "impact": "Measurable business impact on digital mortgage experience"
-        }
-      ]
-    }
-  ]
-}
-
-Focus on QUALITY over COVERAGE. It's better to have 3 deeply analyzed themes than 7 superficial ones. Think like a strategic consultant - identify patterns, implications, and opportunities that a busy PM would miss by just reading headlines.`;
-}
-
-/**
- * Competitor-specific prompt for competitor-intel category
- */
-function getCompetitorPrompt(articleSummaries) {
-  return `You are a competitive intelligence analyst for Freedom Mortgage's product leadership. Analyze these fintech and mortgage industry articles to identify competitor activities and strategic implications.
-
-COMPETITORS TO TRACK:
-- Top Lenders: Rocket Mortgage, United Wholesale Mortgage (UWM), loanDepot, PennyMac, Mr. Cooper
-- Fintech Disruptors: Better, Blend, Figure, Beeline, Tomo, Morty
-
-Articles:
-${JSON.stringify(articleSummaries, null, 2)}
-
-ANALYSIS REQUIREMENTS:
-
-1. **Competitor Activity Summary** (TL;DR - 3 bullets):
-   - Focus on specific competitor moves, not general market trends
-   - Name the competitor and specific action taken
-   - If no direct competitor news, summarize fintech trends affecting mortgage industry
-
-2. **Competitive Threats & Opportunities** (3-5 items):
-   - Product launches or feature releases by competitors
-   - Funding rounds or M&A activity
-   - Strategic partnerships
-   - Technology/AI investments
-   - Pricing or business model changes
-
-3. **Strategic Implications for Freedom Mortgage**:
-   - What competitive gaps should Freedom address?
-   - What opportunities exist to differentiate?
-   - What technology investments are competitors making?
-
-JSON STRUCTURE:
-{
-  "tldr": [
-    "[Competitor] launched/announced [specific action]",
-    "[Competitor] raised/acquired [specific deal]",
-    "Market trend: [implication for Freedom]"
-  ],
-  "recommendedActions": [
-    {
-      "action": "Specific competitive response",
-      "rationale": "Why this matters - what competitor triggered this",
-      "category": "Competitive Response" | "Product Gap" | "Technology Investment",
-      "priority": "High" | "Medium",
-      "expectedImpact": "How this helps Freedom compete"
-    }
-  ],
-  "themes": [
-    {
-      "name": "Competitor or trend name",
-      "icon": "🎯" | "⚔️" | "🚀" | "💰" | "🤖",
-      "insights": [
-        {
-          "text": "What they did, why it matters for the mortgage industry, what Freedom should consider. Be specific about competitive implications.",
-          "articleIds": [relevant article IDs]
-        }
-      ],
-      "actions": [
-        {
-          "action": "Recommended competitive response",
-          "impact": "Competitive advantage gained or gap closed"
-        }
-      ]
-    }
-  ]
-}
-
-Focus on ACTIONABLE competitive intelligence. Skip generic fintech news - only include items directly relevant to mortgage/lending competition. If articles don't mention specific competitors, analyze trends that could affect Freedom's competitive position.`;
 }

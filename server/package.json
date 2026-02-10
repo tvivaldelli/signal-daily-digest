@@ -1,7 +1,7 @@
 {
   "name": "mortgage-news-monitor-server",
   "version": "1.0.0",
-  "description": "Backend for mortgage industry news monitoring application",
+  "description": "Daily email digest of mortgage industry intelligence",
   "main": "index.js",
   "type": "module",
   "scripts": {
@@ -18,14 +18,13 @@
   "license": "ISC",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
-    "@replit/database": "^2.0.5",
     "cheerio": "^1.0.0",
-    "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^4.21.2",
     "html-entities": "^2.6.0",
     "node-cron": "^3.0.3",
     "pg": "^8.16.3",
+    "resend": "^4.8.0",
     "rss-parser": "^3.13.0"
   }
 }
