@@ -4,7 +4,7 @@ AI-powered daily email digest of mortgage industry intelligence for product lead
 
 ## Application Overview
 
-**Purpose:** Aggregate RSS feeds and scrape competitor newsrooms daily, generate a unified AI-powered digest using Claude, and deliver it via email at 6:30 AM ET. No web frontend — just a health endpoint to keep Replit alive.
+**Purpose:** Aggregate RSS feeds and scrape competitor newsrooms daily, generate a unified AI-powered digest using Claude, and deliver it via email at 6:30 AM ET. No web frontend — just a health endpoint and a cron-triggered digest endpoint.
 
 **Target User:** Product Manager at Freedom Mortgage responsible for digital mortgage experience.
 
@@ -13,7 +13,7 @@ AI-powered daily email digest of mortgage industry intelligence for product lead
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     Daily Pipeline                           │
-│  Cron (6:30 AM ET) → Fetch → Insights → Email → Archive    │
+│  cron-job.org (6:30 AM ET) → Fetch → Insights → Email → Archive │
 ├─────────────────────────────────────────────────────────────┤
 │                     Data Sources                             │
 │        14 RSS Feeds + 3 HTML Scrapers = 17 total            │
@@ -24,8 +24,8 @@ AI-powered daily email digest of mortgage industry intelligence for product lead
 │                     AI + Delivery                            │
 │    Claude Sonnet 4.5 (insights) + Resend (email)            │
 ├─────────────────────────────────────────────────────────────┤
-│                     Health Server                            │
-│           Express.js — GET /health only                      │
+│                     Server (Replit Autoscale)                 │
+│    Express.js — GET /health + GET /run-digest                │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -33,7 +33,7 @@ AI-powered daily email digest of mortgage industry intelligence for product lead
 
 | File | Purpose |
 |------|---------|
-| `server/index.js` | Minimal Express server with `/health` endpoint |
+| `server/index.js` | Express server with `/health` and `/run-digest` endpoints |
 | `server/scheduler.js` | Cron jobs + daily digest pipeline orchestration |
 | `server/rssFetcher.js` | RSS feed parsing + newsroom scraper integration |
 | `server/newsroomScraper.js` | Cheerio scrapers for Rocket, Blend, ICE newsrooms |
@@ -58,7 +58,7 @@ File: `server/data/signal-archive.jsonl` — one JSON object per line, append-on
 ## Daily Pipeline
 
 ```
-6:30 AM ET (cron)
+6:30 AM ET (cron-job.org → GET /run-digest?token=)
     │
     ▼
 ┌─────────────────────────┐
@@ -108,6 +108,7 @@ File: `server/data/signal-archive.jsonl` — one JSON object per line, append-on
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
 | GET | `/health` | Returns digest pipeline state (lastDigestRun, articleCount, emailStatus, nextScheduledRun) |
+| GET | `/run-digest?token=` | Token-protected trigger for daily digest pipeline (called by cron-job.org) |
 
 ## Environment Variables
 
@@ -117,8 +118,14 @@ File: `server/data/signal-archive.jsonl` — one JSON object per line, append-on
 | `ANTHROPIC_API_KEY` | Claude API authentication |
 | `RESEND_API_KEY` | Resend email API key |
 | `DIGEST_EMAIL` | Recipient email address |
-| `RUN_ON_STARTUP` | Set to `true` to run digest on server boot |
+| `CRON_SECRET` | Token for authenticating `/run-digest` endpoint (used by cron-job.org) |
 | `PORT` | Server port (default: 3001) |
+
+## Scheduling
+
+The app runs on Replit Autoscale, which scales to zero when idle. An internal cron job won't work because the server is asleep at trigger time. Instead, **cron-job.org** sends a GET request to `/run-digest?token=` at 10:30 UTC (6:30 AM ET) daily, which wakes the instance and runs the pipeline.
+
+**Deployment URL:** `https://mortgage-intel-hub.replit.app`
 
 ## Skills
 
