@@ -14,11 +14,26 @@ app.get('/run-digest', async (req, res) => {
   if (!process.env.CRON_SECRET || token !== process.env.CRON_SECRET) {
     return res.status(401).json({ error: 'unauthorized' });
   }
-  res.json({ status: 'started' });
+
+  // Stream response to keep connection alive on Replit Autoscale.
+  // cron-job.org gets an immediate 200, and periodic keep-alive writes
+  // prevent Replit from scaling to zero before the pipeline finishes.
+  res.writeHead(200, {
+    'Content-Type': 'text/plain',
+    'Transfer-Encoding': 'chunked',
+  });
+  res.write('started\n');
+
+  const keepAlive = setInterval(() => res.write('.\n'), 10000);
+
   try {
     await runDailyDigest();
+    clearInterval(keepAlive);
+    res.end(`completed ${digestState.articleCount} articles, email: ${digestState.emailStatus}\n`);
   } catch (error) {
+    clearInterval(keepAlive);
     console.error('[API] Digest trigger failed:', error.message);
+    res.end(`failed: ${error.message}\n`);
   }
 });
 
