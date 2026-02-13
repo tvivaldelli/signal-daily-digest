@@ -1,4 +1,5 @@
 import express from 'express';
+import http from 'http';
 import dotenv from 'dotenv';
 import { initScheduler, digestState, runDailyDigest } from './scheduler.js';
 
@@ -24,16 +25,38 @@ app.get('/run-digest', async (req, res) => {
   });
   res.write('started\n');
 
-  const keepAlive = setInterval(() => res.write('.\n'), 10000);
+  // Track connection state so we don't crash writing to a closed socket
+  // after cron-job.org disconnects at its 30-second timeout.
+  let connectionOpen = true;
+  res.on('close', () => { connectionOpen = false; });
+  res.on('error', () => { connectionOpen = false; });
+
+  const safeWrite = (msg) => {
+    if (!connectionOpen) return;
+    try { res.write(msg); } catch (e) { connectionOpen = false; }
+  };
+
+  // Two keep-alive mechanisms:
+  // 1. Write to chunked response (works while cron-job.org is connected)
+  // 2. Self-ping /health to generate fresh inbound requests, preventing
+  //    Replit Autoscale from scaling to zero after cron-job.org disconnects
+  const keepAlive = setInterval(() => {
+    safeWrite('.\n');
+    http.get(`http://localhost:${PORT}/health`, (r) => r.resume()).on('error', () => {});
+  }, 10000);
 
   try {
     await runDailyDigest();
     clearInterval(keepAlive);
-    res.end(`completed ${digestState.articleCount} articles, email: ${digestState.emailStatus}\n`);
+    if (connectionOpen) {
+      res.end(`completed ${digestState.articleCount} articles, email: ${digestState.emailStatus}\n`);
+    }
   } catch (error) {
     clearInterval(keepAlive);
     console.error('[API] Digest trigger failed:', error.message);
-    res.end(`failed: ${error.message}\n`);
+    if (connectionOpen) {
+      res.end(`failed: ${error.message}\n`);
+    }
   }
 });
 
