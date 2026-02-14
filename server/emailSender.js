@@ -21,8 +21,8 @@ export function buildDigestHtml(digestData, weeklyBullets = null) {
     day: 'numeric',
   });
 
-  // Nothing notable — short email
-  if (digestData.nothing_notable) {
+  // Nothing notable — short email (but still include weekly summary on Fridays)
+  if (digestData.nothing_notable && !(weeklyBullets && weeklyBullets.length > 0)) {
     return `
 <!DOCTYPE html>
 <html>
