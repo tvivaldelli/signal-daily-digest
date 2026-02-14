@@ -245,7 +245,9 @@ Return ONLY the JSON object, no other text.`;
     return digest;
 
   } catch (error) {
-    console.error('[Insights] Error generating insights:', error.message);
+    console.error(`[Insights] Error generating insights: ${error.message}`);
+    console.error(`[Insights] Error type: ${error.constructor.name}, status: ${error.status || 'N/A'}`);
+    console.error(`[Insights] Articles passed: ${articles.length}, prompt length: ${prompt.length} chars`);
     return {
       date: new Date().toISOString().split('T')[0],
       top_insights: [],
