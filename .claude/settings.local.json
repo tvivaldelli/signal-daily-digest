@@ -86,7 +86,12 @@
       "Bash(git -C /home/runner/workspace log --oneline -5)",
       "Bash(git -C /home/runner/workspace add:*)",
       "Bash(git -C /home/runner/workspace commit -m \"$\\(cat <<''EOF''\nAdd token-protected /run-digest endpoint for external cron triggering\n\nAutoscale deployments sleep when idle, so the internal cron job can''t\nreliably fire at 6:30 AM. This adds a GET /run-digest?token= endpoint\nso an external service \\(cron-job.org\\) can wake the server and trigger\nthe daily digest pipeline. Also exports runDailyDigest from scheduler.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(npm ls:*)",
+      "Bash(npm info:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(pip install:*)",
+      "Bash(pip3 install:*)"
     ],
     "deny": [],
     "ask": []
