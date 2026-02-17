@@ -202,6 +202,72 @@ async function fetchRSS(source, maxRetries = 3) {
 }
 
 /**
+ * Fetch YouTube video description from the video page
+ */
+async function fetchYouTubeDescription(videoUrl) {
+  const videoId = extractYouTubeVideoId(videoUrl);
+  if (!videoId) return null;
+
+  try {
+    const resp = await fetch('https://www.youtube.com/watch?v=' + videoId, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Cookie': 'CONSENT=YES+cb.20210328-17-p0.en+FX+634'
+      }
+    });
+    const html = await resp.text();
+
+    const prMatch = html.match(/ytInitialPlayerResponse\s*=\s*(\{.+?\});\s*(?:var|<\/script>)/s);
+    if (!prMatch) return null;
+
+    const pr = JSON.parse(prMatch[1]);
+    const description = pr.videoDetails?.shortDescription || '';
+
+    if (description.length > 0) {
+      console.log(`[YT] Description fetched for ${videoId} (${description.split(/\s+/).length} words)`);
+    }
+    return description || null;
+  } catch (error) {
+    console.log(`[YT] No description available for ${videoId}: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Enrich YouTube articles with video descriptions (parallel, with timeout)
+ */
+async function enrichYouTubeArticles(articles) {
+  const youtubeArticles = articles.filter(a => a.type === 'youtube' && a.link);
+  if (youtubeArticles.length === 0) return;
+
+  console.log(`\n[YT] Fetching descriptions for ${youtubeArticles.length} YouTube video(s)...`);
+
+  const results = await Promise.allSettled(
+    youtubeArticles.map(async (article) => {
+      // 10-second timeout per video
+      const timeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Description fetch timed out')), 10000)
+      );
+      const description = await Promise.race([
+        fetchYouTubeDescription(article.link),
+        timeout
+      ]);
+
+      if (description) {
+        article.summary = description.substring(0, 300).trim() + '...';
+        article.originalContent = description.substring(0, 5000);
+        await saveArticle(article);
+        return true;
+      }
+      return false;
+    })
+  );
+
+  const enriched = results.filter(r => r.status === 'fulfilled' && r.value).length;
+  console.log(`[YT] Enriched ${enriched}/${youtubeArticles.length} videos with descriptions`);
+}
+
+/**
  * Fetch all RSS feeds + run newsroom scrapers
  */
 export async function fetchAllFeeds() {
@@ -234,6 +300,10 @@ export async function fetchAllFeeds() {
   }
 
   const allArticles = [...rssResults.flat(), ...scraperArticles];
+
+  // Enrich YouTube articles with video descriptions
+  await enrichYouTubeArticles(allArticles);
+
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
   console.log(`\nTotal articles fetched: ${allArticles.length} (${rssResults.flat().length} RSS + ${scraperArticles.length} scraped) in ${elapsed}s\n`);

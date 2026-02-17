@@ -43,9 +43,10 @@ export async function generateInsights(articles) {
     };
   }
 
-  // Separate content articles from YouTube video titles
-  const contentArticles = articles.filter(a => a.type !== 'youtube');
-  const youtubeArticles = articles.filter(a => a.type === 'youtube');
+  // Separate enriched YouTube videos (with descriptions) from title-only ones
+  const enrichedYouTube = articles.filter(a => a.type === 'youtube' && a.originalContent);
+  const titleOnlyYouTube = articles.filter(a => a.type === 'youtube' && !a.originalContent);
+  const contentArticles = [...articles.filter(a => a.type !== 'youtube'), ...enrichedYouTube];
 
   // Group content articles by category
   const grouped = {};
@@ -71,9 +72,9 @@ export async function generateInsights(articles) {
     }
   }
 
-  if (youtubeArticles.length > 0) {
-    articleBlock += `\n## YOUTUBE VIDEOS (${youtubeArticles.length} items — titles only, do NOT generate insights from video titles)\n`;
-    for (const item of youtubeArticles) {
+  if (titleOnlyYouTube.length > 0) {
+    articleBlock += `\n## YOUTUBE VIDEOS (${titleOnlyYouTube.length} items — titles only, do NOT generate insights from video titles)\n`;
+    for (const item of titleOnlyYouTube) {
       articleBlock += `- ${item.title} (${item.source}) — ${item.link}\n`;
     }
   }
@@ -82,12 +83,12 @@ export async function generateInsights(articles) {
 
 CONTEXT:
 - the company is a top-5 US mortgage servicer
-- Current priorities: digital self-service, AI-assisted underwriting, mobile app engagement
+- Current priorities: digital self-service, digital self-containment, digital originations, mobile app engagement, leveraging AI to accelerate value creation
 - Roadmap themes: servicing retention, loss mitigation automation, borrower communication
 - Key competitors: Rocket Mortgage (acquired Mr. Cooper), United Wholesale Mortgage, loanDepot, PennyMac
 - Fintech disruptors: Better, Blend, Figure, Beeline, Tomo, ICE Mortgage Technology
 
-TODAY'S ARTICLES (${contentArticles.length} content articles + ${youtubeArticles.length} videos from ${sourceCount} sources):
+TODAY'S ARTICLES (${contentArticles.length} content articles + ${titleOnlyYouTube.length} title-only videos from ${sourceCount} sources):
 ${articleBlock}
 
 FILTERING CRITERIA — Only include in top_insights or competitive_signals if at least ONE:
