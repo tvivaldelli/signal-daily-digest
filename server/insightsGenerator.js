@@ -54,11 +54,13 @@ export async function generateInsights(articles) {
     const cat = article.category || 'uncategorized';
     if (!grouped[cat]) grouped[cat] = [];
     grouped[cat].push({
+      id: article.id,
       title: article.title,
-      summary: article.summary || article.originalContent?.substring(0, 200) || '',
+      summary: article.originalContent?.substring(0, 2000) || article.summary || '',
       source: article.source,
       link: article.link,
-      pubDate: article.pubDate
+      pubDate: article.pubDate,
+      hasFullContent: article.hasFullContent || false
     });
   }
 

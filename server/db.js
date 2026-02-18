@@ -32,6 +32,8 @@ async function initDB() {
       await pool.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS category VARCHAR(255)`);
       await pool.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS image_url TEXT`);
       await pool.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS type VARCHAR(50) DEFAULT 'article'`);
+      await pool.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS content_html TEXT`);
+      await pool.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS has_full_content BOOLEAN DEFAULT false`);
     } catch (alterError) {
       // Columns might already exist
     }
@@ -54,18 +56,20 @@ async function initDB() {
  */
 export async function saveArticle(article) {
   try {
-    const { title, link, pubDate, source, category, summary, originalContent, imageUrl, type } = article;
+    const { title, link, pubDate, source, category, summary, originalContent, imageUrl, type, contentHtml, hasFullContent } = article;
 
     await pool.query(
-      `INSERT INTO articles (title, link, pub_date, source, category, type, summary, original_content, image_url)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO articles (title, link, pub_date, source, category, type, summary, original_content, image_url, content_html, has_full_content)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        ON CONFLICT (link) DO UPDATE SET
          title = EXCLUDED.title,
          category = EXCLUDED.category,
          type = EXCLUDED.type,
          summary = EXCLUDED.summary,
          original_content = EXCLUDED.original_content,
-         image_url = EXCLUDED.image_url
+         image_url = EXCLUDED.image_url,
+         content_html = EXCLUDED.content_html,
+         has_full_content = EXCLUDED.has_full_content
        `,
       [
         title || '',
@@ -74,9 +78,11 @@ export async function saveArticle(article) {
         source || '',
         category || '',
         type || 'article',
-        (summary || '').substring(0, 5000),
-        (originalContent || '').substring(0, 5000),
-        imageUrl || null
+        summary || '',
+        originalContent || '',
+        imageUrl || null,
+        contentHtml || null,
+        hasFullContent || false
       ]
     );
 
@@ -136,6 +142,7 @@ export async function getArticles(filters = {}) {
     const result = await pool.query(query, params);
 
     const articles = result.rows.map(row => ({
+      id: row.id,
       title: row.title,
       link: row.link,
       pubDate: row.pub_date,
@@ -144,7 +151,9 @@ export async function getArticles(filters = {}) {
       type: row.type || 'article',
       summary: row.summary,
       originalContent: row.original_content,
-      imageUrl: row.image_url
+      imageUrl: row.image_url,
+      contentHtml: row.content_html,
+      hasFullContent: row.has_full_content || false
     }));
 
     console.log(`[DB] Retrieved ${articles.length} articles`);
@@ -191,12 +200,41 @@ export async function cleanOldArticles() {
   }
 }
 
+/**
+ * Get a single article by ID (for reader endpoint)
+ */
+export async function getArticleById(id) {
+  try {
+    const result = await pool.query('SELECT * FROM articles WHERE id = $1', [id]);
+    if (result.rows.length === 0) return null;
+    const row = result.rows[0];
+    return {
+      id: row.id,
+      title: row.title,
+      link: row.link,
+      pubDate: row.pub_date,
+      source: row.source,
+      category: row.category,
+      type: row.type || 'article',
+      summary: row.summary,
+      originalContent: row.original_content,
+      imageUrl: row.image_url,
+      contentHtml: row.content_html,
+      hasFullContent: row.has_full_content || false
+    };
+  } catch (error) {
+    console.error('[DB] Error getting article by ID:', error.message);
+    return null;
+  }
+}
+
 // Initialize database when module loads
 initDB();
 
 export default {
   saveArticle,
   getArticles,
+  getArticleById,
   getSources,
   cleanOldArticles
 };

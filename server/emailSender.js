@@ -6,6 +6,7 @@ function getResend() {
   return resend;
 }
 const FROM_ADDRESS = 'onboarding@resend.dev';
+const APP_URL = process.env.APP_URL || 'https://mortgage-intel-hub.replit.app';
 
 /**
  * Build the HTML email body for a daily digest
@@ -58,15 +59,20 @@ export function buildDigestHtml(digestData, weeklyBullets = null) {
 
   // Top 3 Insights
   if (digestData.top_insights && digestData.top_insights.length > 0) {
-    const insightItems = digestData.top_insights.map(insight => `
+    const insightItems = digestData.top_insights.map(insight => {
+      const readUrl = (insight.has_full_content && insight.article_id)
+        ? `${APP_URL}/read/${insight.article_id}`
+        : insight.url;
+      return `
       <div style="margin-bottom:20px;padding-bottom:20px;border-bottom:1px solid #eee;">
         <h3 style="font-size:15px;color:#111;margin:0 0 6px;">${escapeHtml(insight.headline)}</h3>
         <p style="font-size:14px;color:#444;line-height:1.6;margin:0 0 6px;">${escapeHtml(insight.explanation)}</p>
         <p style="font-size:13px;color:#666;line-height:1.5;margin:0 0 4px;"><em>${escapeHtml(insight.connection)}</em></p>
         <p style="font-size:12px;color:#888;margin:0;">
-          Source: ${escapeHtml(insight.source)}${insight.url ? ` &mdash; <a href="${escapeHtml(insight.url)}" style="color:#2563eb;">Read</a>` : ''}
+          Source: ${escapeHtml(insight.source)}${readUrl ? ` &mdash; <a href="${escapeHtml(readUrl)}" style="color:#2563eb;">Read</a>` : ''}
         </p>
-      </div>`).join('');
+      </div>`;
+    }).join('');
 
     sections += `
     <div style="margin-bottom:28px;">
@@ -94,11 +100,16 @@ export function buildDigestHtml(digestData, weeklyBullets = null) {
 
   // Worth Reading/Watching (max 5)
   if (digestData.worth_reading && digestData.worth_reading.length > 0) {
-    const links = digestData.worth_reading.slice(0, 5).map(item => `
+    const links = digestData.worth_reading.slice(0, 5).map(item => {
+      const readUrl = (item.has_full_content && item.article_id)
+        ? `${APP_URL}/read/${item.article_id}`
+        : item.url;
+      return `
       <li style="margin-bottom:10px;">
-        <a href="${escapeHtml(item.url)}" style="color:#2563eb;font-size:14px;text-decoration:none;font-weight:500;">${escapeHtml(item.title)}</a>
+        <a href="${escapeHtml(readUrl)}" style="color:#2563eb;font-size:14px;text-decoration:none;font-weight:500;">${escapeHtml(item.title)}</a>
         <br><span style="font-size:13px;color:#666;">${escapeHtml(item.reason)}</span>
-      </li>`).join('');
+      </li>`;
+    }).join('');
 
     sections += `
     <div style="margin-bottom:28px;">

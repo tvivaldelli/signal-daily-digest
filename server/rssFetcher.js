@@ -1,5 +1,6 @@
 import Parser from 'rss-parser';
 import { readFile } from 'fs/promises';
+import sanitizeHtml from 'sanitize-html';
 import { saveArticle } from './db.js';
 import { decode } from 'html-entities';
 import { scrapeRocketPressReleases, scrapeBlendNewsroom, scrapeICEMortgageTech } from './newsroomScraper.js';
@@ -17,6 +18,25 @@ const parser = new Parser({
     ]
   }
 });
+
+/**
+ * Sanitize RSS HTML content for safe reader rendering
+ */
+function sanitizeArticleHtml(html) {
+  return sanitizeHtml(html, {
+    allowedTags: [
+      'p', 'br', 'strong', 'b', 'em', 'i', 'u', 'a',
+      'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+      'ul', 'ol', 'li', 'blockquote', 'pre', 'code',
+      'img', 'figure', 'figcaption', 'div', 'span', 'hr'
+    ],
+    allowedAttributes: {
+      'a': ['href', 'title'],
+      'img': ['src', 'alt', 'width', 'height'],
+    },
+    allowedSchemes: ['http', 'https'],
+  });
+}
 
 let cachedSources = null;
 
@@ -157,9 +177,10 @@ async function fetchRSS(source, maxRetries = 3) {
 
       for (const item of feed.items.slice(0, 10)) {
         try {
-          const content = item['content:encoded'] || item.description || item.summary || '';
-          const cleanContent = decode(content.replace(/<[^>]*>/g, ''));
+          const rawHtml = item['content:encoded'] || item.description || item.summary || '';
+          const cleanContent = decode(rawHtml.replace(/<[^>]*>/g, ''));
           const quickSummary = isYouTube ? '' : cleanContent.substring(0, 300).trim() + '...';
+          const hasFullContent = !isYouTube && cleanContent.length > 500;
 
           const imageUrl = extractImageUrl(item);
 
@@ -171,8 +192,10 @@ async function fetchRSS(source, maxRetries = 3) {
             category: source.category || '',
             type: isYouTube ? 'youtube' : 'article',
             summary: quickSummary,
-            originalContent: isYouTube ? '' : cleanContent.substring(0, 500),
-            imageUrl: imageUrl
+            originalContent: isYouTube ? '' : cleanContent,
+            imageUrl: imageUrl,
+            contentHtml: hasFullContent ? sanitizeArticleHtml(rawHtml) : null,
+            hasFullContent
           };
 
           await saveArticle(article);
@@ -255,7 +278,8 @@ async function enrichYouTubeArticles(articles) {
 
       if (description) {
         article.summary = description.substring(0, 300).trim() + '...';
-        article.originalContent = description.substring(0, 5000);
+        article.originalContent = description;
+        article.hasFullContent = description.length > 500;
         await saveArticle(article);
         return true;
       }

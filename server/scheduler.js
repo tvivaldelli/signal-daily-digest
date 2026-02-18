@@ -55,6 +55,24 @@ export async function runDailyDigest() {
     // 4. Generate insights via Claude
     const digest = await generateInsights(articles);
 
+    // 4b. Enrich digest items with article IDs for reader link routing
+    const articlesByUrl = new Map(articles.map(a => [a.link, a]));
+
+    for (const insight of (digest.top_insights || [])) {
+      const match = articlesByUrl.get(insight.url);
+      if (match) {
+        insight.article_id = match.id;
+        insight.has_full_content = match.hasFullContent || false;
+      }
+    }
+    for (const item of (digest.worth_reading || [])) {
+      const match = articlesByUrl.get(item.url);
+      if (match) {
+        item.article_id = match.id;
+        item.has_full_content = match.hasFullContent || false;
+      }
+    }
+
     // 5. Friday check → weekly summary
     let weeklyBullets = null;
     const today = new Date();

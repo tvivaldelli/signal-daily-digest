@@ -76,6 +76,8 @@ export async function scrapeRocketPressReleases(maxItems = 10) {
           summary: '',
           originalContent: '',
           imageUrl: null,
+          contentHtml: null,
+          hasFullContent: false,
         });
       });
 
@@ -131,6 +133,8 @@ export async function scrapeBlendNewsroom(maxItems = 10) {
           summary: '',
           originalContent: '',
           imageUrl: null,
+          contentHtml: null,
+          hasFullContent: false,
         });
       });
 
@@ -189,6 +193,8 @@ export async function scrapeICEMortgageTech(maxItems = 10) {
           summary: '',
           originalContent: '',
           imageUrl: null,
+          contentHtml: null,
+          hasFullContent: false,
         });
       });
 
