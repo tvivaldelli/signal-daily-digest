@@ -1,5 +1,4 @@
 import express from 'express';
-import http from 'http';
 import dotenv from 'dotenv';
 import { initScheduler, digestState, runDailyDigest } from './scheduler.js';
 import { getArticleById } from './db.js';
@@ -17,19 +16,24 @@ app.get('/run-digest', (req, res) => {
     return res.status(401).json({ error: 'unauthorized' });
   }
 
-  // Respond immediately so cron-job.org sees a clean 200 (it has a 30s timeout).
-  // The pipeline runs in the background with self-pings to keep Replit Autoscale alive.
-  res.json({ status: 'started', time: new Date().toISOString() });
+  // Keep the response open until the pipeline completes. This prevents Replit
+  // Autoscale (Cloud Run) from killing the container — it considers the request
+  // active until res.end() is called. cron-job.org will disconnect at its ~30s
+  // timeout, but that's fine; Cloud Run still tracks the server-side response.
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.write(`started: ${new Date().toISOString()}\n`);
 
-  // Self-ping /health every 10s to prevent Replit Autoscale from scaling to zero
-  // while the pipeline runs (~40-120s).
-  const keepAlive = setInterval(() => {
-    http.get(`http://localhost:${PORT}/health`, (r) => r.resume()).on('error', () => {});
-  }, 10000);
+  // Swallow write errors when the client (cron-job.org) disconnects early
+  res.on('error', () => {});
 
   runDailyDigest()
-    .catch(error => console.error('[API] Digest trigger failed:', error.message))
-    .finally(() => clearInterval(keepAlive));
+    .then(() => {
+      try { res.end(`done: ${new Date().toISOString()}\n`); } catch (e) { /* client gone */ }
+    })
+    .catch(error => {
+      console.error('[API] Digest trigger failed:', error.message);
+      try { res.end(`error: ${error.message}\n`); } catch (e) { /* client gone */ }
+    });
 });
 
 app.get('/health', (req, res) => {
