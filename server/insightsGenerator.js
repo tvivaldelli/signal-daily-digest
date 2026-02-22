@@ -81,23 +81,23 @@ export async function generateInsights(articles) {
     }
   }
 
-  const prompt = `You are the daily intelligence analyst for a Product Manager at Freedom Mortgage who owns the digital mortgage experience (online applications, servicing portal, mobile app).
+  const prompt = `You are a daily intelligence analyst for a digital product leader at a mid-size mortgage company.
 
 CONTEXT:
-- Freedom Mortgage is a top-5 US mortgage servicer
-- Current priorities: digital self-service, digital self-containment, digital originations, mobile app engagement, leveraging AI to accelerate value creation
+- You report to someone who owns the digital mortgage experience: online applications, servicing portal, mobile app
+- Current priorities: digital self-service, digital originations, mobile app engagement, AI-driven process automation
 - Roadmap themes: servicing retention, loss mitigation automation, borrower communication
-- Key competitors: Rocket Mortgage (acquired Mr. Cooper), United Wholesale Mortgage, loanDepot, PennyMac
+- Key competitors: Rocket Mortgage, United Wholesale Mortgage, loanDepot, PennyMac
 - Fintech disruptors: Better, Blend, Figure, Beeline, Tomo, ICE Mortgage Technology
 
 TODAY'S ARTICLES (${contentArticles.length} content articles + ${titleOnlyYouTube.length} title-only videos from ${sourceCount} sources):
 ${articleBlock}
 
 FILTERING CRITERIA — Only include in top_insights or competitive_signals if at least ONE:
-1. Directly affects Freedom Mortgage's business or competitive position
+1. Directly affects mortgage servicing or origination strategy
 2. Signals a technology shift that could change mortgage origination or servicing
-3. Represents a competitor move that requires a response or creates an opportunity
-4. Provides actionable intelligence for the product roadmap
+3. Represents a competitor move that requires attention or creates an opportunity
+4. Provides actionable intelligence for a digital product roadmap
 
 For worth_reading, also include strong product management content (frameworks, practices, case studies, AI/workflow thinking) even if it has no direct mortgage connection — it informs how the PM works, not just what they work on.
 
@@ -110,7 +110,7 @@ OUTPUT FORMAT (strict JSON, no markdown fences):
     {
       "headline": "One-line insight headline",
       "explanation": "2-3 sentences: what happened and why it matters",
-      "connection": "How this connects to Freedom's priorities or roadmap",
+      "connection": "How this connects to digital mortgage priorities",
       "source": "Source name",
       "url": "Article URL"
     }
@@ -119,7 +119,7 @@ OUTPUT FORMAT (strict JSON, no markdown fences):
     {
       "competitor": "Company name",
       "signal": "What they did",
-      "implication": "What it means for Freedom"
+      "implication": "What it means for mortgage product strategy"
     }
   ],
   "worth_reading": [
@@ -137,7 +137,7 @@ OUTPUT FORMAT (strict JSON, no markdown fences):
 RULES:
 - top_insights: Exactly 3 (or fewer if truly nothing qualifies). Quality over quantity.
 - competitive_signals: 0-3. Only include if a specific competitor is mentioned. Empty array is fine.
-- worth_reading: 3-5 links. Aim for a mix: 2-3 product management articles (from SVPG, Teresa Torres, Lenny's Newsletter, Ethan Mollick, or similar PM/AI sources) plus any standout mortgage or competitive articles. PM content is always valuable here even without a mortgage connection. YouTube videos can go here too.
+- worth_reading: 3-5 links. Always include at least 1 product management article (from SVPG, Teresa Torres, Lenny's Newsletter, Ethan Mollick, or similar PM/AI sources) unless none of the available PM content is genuinely insightful. Aim for a mix of PM and mortgage/competitive articles. PM content is always valuable here even without a mortgage connection. YouTube videos can go here too.
 - If genuinely nothing is notable today, set nothing_notable: true and leave arrays empty.
 - Never fabricate URLs — only use URLs from the articles provided.
 - Do not generate insights from YouTube video titles alone.
@@ -146,7 +146,7 @@ Return ONLY the JSON object, no other text.`;
 
   try {
     const apiRequest = anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
+      model: 'claude-sonnet-4-6-20250514',
       max_tokens: 8000,
       temperature: 0.25,
       messages: [{ role: 'user', content: prompt }]
@@ -282,7 +282,7 @@ export async function generateWeeklySummary(recentDigests) {
     return `### ${d.date}\nInsights:\n${insights}\nSignals:\n${signals}`;
   }).join('\n\n');
 
-  const prompt = `You are a weekly intelligence summarizer for a mortgage industry Product Manager.
+  const prompt = `You are a weekly intelligence summarizer for a digital product leader in financial services.
 
 Here are the daily digests from this week:
 
@@ -298,7 +298,7 @@ Example: ["Bullet one here", "Bullet two here", "Bullet three here"]`;
 
   try {
     const apiRequest = anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
+      model: 'claude-sonnet-4-6-20250514',
       max_tokens: 2000,
       temperature: 0.25,
       messages: [{ role: 'user', content: prompt }]
