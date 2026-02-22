@@ -1,258 +1,240 @@
-# Mortgage Industry News Monitor
+# Signal
 
-A full-stack application that monitors and aggregates mortgage industry news from multiple sources, with AI-powered summarization using Claude Haiku.
+AI-powered daily email digest that aggregates RSS feeds and web sources, generates insights using Claude, and delivers a curated briefing every morning.
 
-## Features
+No web frontend — just a pipeline triggered by an external cron service that fetches, analyzes, and emails.
 
-- **Automated News Aggregation**: Fetches articles from major mortgage industry news sources via RSS feeds
-- **AI-Powered Summaries**: Uses Claude Haiku API to generate concise 2-3 sentence summaries of each article
-- **Advanced Filtering**: Filter articles by source, date range, and keywords
-- **Scheduled Updates**: Automatic daily fetching at 8 AM EST and weekly cleanup of old articles
-- **Clean UI**: Modern, responsive React interface with card-based article display
-- **Persistent Storage**: Articles stored in Replit DB with 90-day retention
+## How It Works
 
-## Tech Stack
+```
+External cron (e.g. cron-job.org)
+  → GET /run-digest?token=SECRET
+    → Fetch RSS feeds + scrape newsrooms
+    → Store articles in PostgreSQL
+    → Query last 24 hours
+    → Generate insights via Claude API
+    → Send email via Resend
+    → Append digest to JSONL archive
+```
 
-### Backend
-- Node.js with Express
-- Replit DB for data storage
-- RSS Parser for feed ingestion
-- Anthropic Claude Haiku API for summarization
-- node-cron for scheduled tasks
-- Cheerio for HTML parsing
+The server runs on Replit Autoscale (scales to zero when idle). The `/run-digest` endpoint responds immediately and runs the pipeline in the background, keeping the HTTP connection open to prevent the container from being killed mid-pipeline.
 
-### Frontend
-- React 19 with Vite
-- Axios for API communication
-- date-fns for date formatting
-- CSS3 for styling
+On Fridays, a weekly summary is generated from the last 5 digests and included in the email.
 
 ## Project Structure
 
 ```
 /
-├── server/              # Backend Express server
-│   ├── index.js        # Main server file with API routes
-│   ├── db.js           # Replit DB configuration and helpers
-│   ├── rssFetcher.js   # RSS feed fetching logic
-│   ├── claudeSummarizer.js  # Claude API integration
-│   ├── scheduler.js    # Cron job configuration
-│   ├── sources.json    # News source configuration
-│   └── package.json
-│
-├── client/             # React frontend
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── Dashboard.jsx    # Main view
-│   │   │   ├── ArticleCard.jsx  # Article display
-│   │   │   └── FilterBar.jsx    # Filter controls
-│   │   ├── services/
-│   │   │   └── api.js          # API service layer
-│   │   ├── App.jsx
-│   │   └── main.jsx
-│   └── package.json
-│
+├── server/
+│   ├── index.js              # Express server — /health, /run-digest, /read/:id
+│   ├── scheduler.js          # Cron scheduling + pipeline orchestration
+│   ├── rssFetcher.js         # RSS parsing, YouTube enrichment, concurrency limiter
+│   ├── newsroomScraper.js    # Cheerio-based HTML scrapers for newsroom pages
+│   ├── insightsGenerator.js  # Claude API prompt + response parsing
+│   ├── emailSender.js        # Resend SDK + HTML email template
+│   ├── archiver.js           # JSONL append/read for digest history
+│   ├── db.js                 # PostgreSQL connection pool + article CRUD
+│   ├── sources.json          # RSS feed configuration
+│   ├── migrate-archive.js    # One-time legacy migration script
+│   ├── .env.example          # Environment variable template
+│   ├── package.json          # Server dependencies
+│   └── data/
+│       └── signal-archive.jsonl  # Append-only digest archive
+├── package.json              # Root scripts (start, migrate)
 └── README.md
 ```
 
-## Setup Instructions
+## Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Returns pipeline state: last run time, article count, email status, next scheduled run, last error |
+| `GET` | `/run-digest?token=` | Token-protected trigger for the daily pipeline. Called by external cron service |
+| `GET` | `/read/:id` | Renders full article content in a clean reader page. Used for articles where the RSS feed provides full text |
+
+## Data Sources
+
+Sources are configured in two places:
+
+### RSS Feeds — `server/sources.json`
+
+```json
+{
+  "sources": [
+    {
+      "name": "Display Name",
+      "category": "industry",
+      "url": "https://example.com/",
+      "rss": "https://example.com/feed/"
+    }
+  ]
+}
+```
+
+Each source needs a `name`, `category`, `url` (homepage), and `rss` (feed URL). Categories are arbitrary strings used to group articles in the Claude prompt.
+
+YouTube channel feeds are also supported — use URLs like `https://www.youtube.com/feeds/videos.xml?channel_id=CHANNEL_ID`. The pipeline auto-detects YouTube feeds, fetches video descriptions, and tags them as `type: "youtube"`.
+
+### HTML Scrapers — `server/newsroomScraper.js`
+
+For sites without RSS feeds, custom Cheerio scrapers extract press releases and news items from HTML pages. Each scraper is a function that receives a Cheerio `$` instance and returns an array of `{ title, link, pubDate }` objects.
+
+To add a new scraper, create a parser function and register it in `scrapeAllNewsrooms()`.
+
+## Setup
 
 ### Prerequisites
-- Node.js 18+ installed
-- Anthropic API key (get one at https://console.anthropic.com/)
 
-### Deploying on Replit (Recommended)
+- Node.js 18+
+- PostgreSQL database
+- [Anthropic API key](https://console.anthropic.com/)
+- [Resend API key](https://resend.com/)
 
-If you're running this application on Replit, use **Replit Secrets** for secure API key storage:
+### Install
 
-1. **Add your Anthropic API key to Replit Secrets**:
-   - Click the **Secrets** tool (lock icon) in the left sidebar
-   - Add a new secret:
-     - **Key**: `ANTHROPIC_API_KEY`
-     - **Value**: Your Anthropic API key from https://console.anthropic.com/
-   - Click "Add Secret"
-
-2. **Optional - Set custom port** (if needed):
-   - Add another secret with **Key**: `PORT` and **Value**: `3001`
-   - The application defaults to 3001, so this is optional
-
-3. **Start the servers**:
-   - Backend: `cd server && npm start`
-   - Frontend: `cd client && npm run dev`
-
-Replit automatically injects secrets as environment variables - no `.env` file needed!
-
-### Backend Setup (Local Development)
-
-1. Navigate to the server directory:
-   ```bash
-   cd server
-   ```
-
-2. Install dependencies (if not already installed):
-   ```bash
-   npm install
-   ```
-
-3. Create a `.env` file from the example:
-   ```bash
-   cp .env.example .env
-   ```
-
-4. Edit `.env` and add your Anthropic API key:
-   ```
-   ANTHROPIC_API_KEY=your_actual_api_key_here
-   PORT=3001
-   ```
-
-5. Start the backend server:
-   ```bash
-   npm start
-   ```
-
-   Or for development with auto-reload:
-   ```bash
-   npm run dev
-   ```
-
-The server will start on http://localhost:3001
-
-### Frontend Setup
-
-1. Navigate to the client directory:
-   ```bash
-   cd client
-   ```
-
-2. Install dependencies (if not already installed):
-   ```bash
-   npm install
-   ```
-
-3. Create a `.env` file from the example:
-   ```bash
-   cp .env.example .env
-   ```
-
-4. Edit `.env` if needed (default should work for local development):
-   ```
-   VITE_API_URL=http://localhost:3001
-   ```
-
-5. Start the development server:
-   ```bash
-   npm run dev
-   ```
-
-The frontend will be available at http://localhost:5173
-
-## API Endpoints
-
-### GET /api/articles
-Fetch stored articles with optional filters.
-
-Query parameters:
-- `source` - Filter by news source name
-- `startDate` - Filter by start date (ISO format)
-- `endDate` - Filter by end date (ISO format)
-- `keyword` - Search in title and summary
-
-Example:
 ```bash
-curl "http://localhost:3001/api/articles?source=HousingWire&keyword=rates"
+npm install
+cd server && npm install
 ```
 
-### POST /api/refresh
-Manually trigger article fetch from all configured sources.
+### Configure
 
-Example:
+Copy the environment template and fill in your values:
+
 ```bash
-curl -X POST http://localhost:3001/api/refresh
+cp server/.env.example server/.env
 ```
 
-### GET /api/sources
-Get list of configured news sources.
+Required environment variables:
 
-Example:
+| Variable | Purpose |
+|----------|---------|
+| `DATABASE_URL` | PostgreSQL connection string |
+| `ANTHROPIC_API_KEY` | Claude API key |
+| `RESEND_API_KEY` | Resend email API key |
+| `DIGEST_EMAIL` | Recipient email address |
+| `CRON_SECRET` | Shared secret for authenticating `/run-digest` |
+
+Optional:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `PORT` | `3001` | Server port |
+| `APP_URL` | `https://mortgage-intel-hub.replit.app` | Base URL for reader links in emails |
+| `RUN_ON_STARTUP` | `false` | If `true`, runs the digest immediately on server start |
+
+On Replit, use Secrets (lock icon) instead of a `.env` file.
+
+### Run
+
 ```bash
-curl http://localhost:3001/api/sources
+npm start
 ```
 
-## News Sources
+Or with auto-reload during development:
 
-The application currently monitors these mortgage industry news sources:
-
-1. **HousingWire** - https://www.housingwire.com/
-2. **National Mortgage News** - https://www.nationalmortgagenews.com/
-3. **Mortgage News Daily** - https://www.mortgagenewsdaily.com/
-4. **FinTech Magazine** - https://fintechmagazine.com/
-
-To add or modify sources, edit `server/sources.json`.
-
-## Scheduled Tasks
-
-The application runs two automated tasks:
-
-1. **Daily News Fetch**: Runs every day at 8:00 AM EST
-   - Fetches latest articles from all configured sources
-   - Generates AI summaries for each article
-   - Stores articles in the database
-
-2. **Weekly Cleanup**: Runs every Sunday at midnight EST
-   - Removes articles older than 90 days
-   - Helps maintain database size
-
-## Usage
-
-1. **View Articles**: The dashboard displays all fetched articles with their AI-generated summaries
-
-2. **Filter Articles**: Use the filter bar to:
-   - Select a specific news source
-   - Search by keyword
-   - Filter by date range
-
-3. **Refresh Articles**: Click the "Refresh Articles" button to manually fetch the latest news
-
-4. **Read Full Articles**: Click on any article title or "Read Full Article" link to view the original source
-
-## Development
-
-### Building for Production
-
-Frontend:
 ```bash
-cd client
-npm run build
+cd server && npm run dev
 ```
 
-The build output will be in `client/dist/`.
+### Trigger the Digest
 
-### Environment Variables
+Manually (replace `YOUR_SECRET`):
 
-**Server (.env)**:
-- `ANTHROPIC_API_KEY` - Required for AI summarization
-- `PORT` - Server port (default: 3001)
+```bash
+curl "http://localhost:3001/run-digest?token=YOUR_SECRET"
+```
 
-**Client (.env)**:
-- `VITE_API_URL` - Backend API URL
+For production, point an external cron service (e.g. [cron-job.org](https://cron-job.org)) at your deployed `/run-digest?token=` URL.
 
-## Troubleshooting
+## Configuring the Claude Prompt
 
-### Backend won't start
-- **On Replit**: Ensure `ANTHROPIC_API_KEY` is set in Replit Secrets (lock icon in sidebar)
-- **Local development**: Ensure `ANTHROPIC_API_KEY` is set in `server/.env`
-- Check that port 3001 is available
-- Verify all dependencies are installed
+The insight generation prompt lives in `server/insightsGenerator.js`. It defines:
 
-### Frontend can't connect to backend
-- Ensure backend is running on port 3001
-- Check `VITE_API_URL` in `client/.env`
-- Verify CORS is enabled on the backend
+- **Persona context** — who the digest is for and what they care about
+- **Filtering criteria** — what makes an article worth highlighting vs. skipping
+- **Output structure** — `top_insights`, `competitive_signals`, `worth_reading` sections
 
-### No articles showing
-- Click "Refresh Articles" to manually fetch news
-- Check backend console for any RSS fetching errors
-- Verify RSS feed URLs in `server/sources.json` are accessible
+To adapt Signal for a different industry or audience, edit the system prompt in `generateInsights()` to reflect your domain, priorities, and competitors.
+
+### Output Schema
+
+The Claude response is parsed into:
+
+```json
+{
+  "date": "2026-02-22",
+  "top_insights": [
+    {
+      "headline": "...",
+      "explanation": "...",
+      "connection": "...",
+      "source": "...",
+      "url": "..."
+    }
+  ],
+  "competitive_signals": [
+    {
+      "competitor": "...",
+      "signal": "...",
+      "implication": "...",
+      "url": "..."
+    }
+  ],
+  "worth_reading": [
+    {
+      "title": "...",
+      "reason": "...",
+      "url": "..."
+    }
+  ],
+  "nothing_notable": false,
+  "article_count": 42,
+  "source_count": 12
+}
+```
+
+## Database
+
+PostgreSQL with a single `articles` table:
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | `SERIAL` | Primary key |
+| `link` | `VARCHAR(2048)` | Unique constraint — deduplicates articles |
+| `title` | `TEXT` | |
+| `source` | `VARCHAR(255)` | Feed name from `sources.json` |
+| `category` | `VARCHAR(255)` | Grouping label |
+| `type` | `VARCHAR(50)` | `article` (default) or `youtube` |
+| `summary` | `TEXT` | First 300 characters of content |
+| `original_content` | `TEXT` | Full article text (HTML stripped) |
+| `image_url` | `TEXT` | Featured image |
+| `pub_date` | `TIMESTAMP` | Publication date |
+| `content_html` | `TEXT` | Sanitized HTML for the reader endpoint |
+| `has_full_content` | `BOOLEAN` | `true` when RSS provides full text |
+| `saved_at` | `TIMESTAMP` | |
+| `created_at` | `TIMESTAMP` | |
+
+The table is auto-created on startup. Articles older than 90 days are cleaned up weekly (Sunday midnight ET).
+
+## Digest Archive
+
+Every digest is appended to `server/data/signal-archive.jsonl` — one JSON object per line, regardless of whether the email succeeds. This archive is used to generate Friday weekly summaries from the last 5 digests.
+
+## Dependencies
+
+| Package | Purpose |
+|---------|---------|
+| `express` | HTTP server |
+| `pg` | PostgreSQL client |
+| `@anthropic-ai/sdk` | Claude API |
+| `resend` | Email delivery |
+| `rss-parser` | RSS feed parsing |
+| `cheerio` | HTML scraping |
+| `sanitize-html` | HTML sanitization for reader |
+| `html-entities` | Decode HTML entities in titles |
+| `node-cron` | Internal scheduler (weekly cleanup) |
+| `dotenv` | Environment variable loading |
 
 ## License
 
