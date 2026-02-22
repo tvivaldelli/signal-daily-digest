@@ -32,6 +32,9 @@ replit.nix
 coverage/
 .nyc_output/
 
+# Claude
+CLAUDE.md
+
 # Misc
 *.bak
 .cache/
