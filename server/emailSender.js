@@ -22,6 +22,36 @@ export function buildDigestHtml(digestData, weeklyBullets = null) {
     day: 'numeric',
   });
 
+  // Error state — Claude API failed, clearly indicate pipeline failure
+  if (digestData.error) {
+    return `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#f7f7f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+<div style="max-width:600px;margin:0 auto;padding:24px;">
+  <div style="background:#fff;border-radius:8px;padding:32px;border:1px solid #e5e5e5;">
+    <p style="font-size:26px;font-weight:700;color:#1e293b;margin:0;letter-spacing:-0.5px;font-family:Georgia,'Times New Roman',serif;">Signal</p>
+    <hr style="border:none;border-top:1.5px solid #1e293b;margin:14px 0 16px;">
+    <p style="font-size:14px;color:#64748b;margin:0 0 20px;">${dateStr}</p>
+    <div style="padding:16px;background:#fef2f2;border-radius:6px;border-left:4px solid #dc2626;margin-bottom:16px;">
+      <p style="color:#991b1b;font-size:15px;font-weight:600;margin:0 0 8px;">Pipeline Error</p>
+      <p style="color:#666;font-size:14px;line-height:1.6;margin:0;">
+        Found ${digestData.article_count || 0} articles from ${digestData.source_count || 0} sources, but failed to generate insights.
+      </p>
+      <p style="color:#999;font-size:13px;line-height:1.5;margin:8px 0 0;">
+        ${escapeHtml(digestData.error)}
+      </p>
+    </div>
+    <p style="color:#666;font-size:13px;line-height:1.5;margin:0;">
+      Re-trigger the digest by visiting /run-digest, or check server logs for details.
+    </p>
+  </div>
+</div>
+</body>
+</html>`;
+  }
+
   // Nothing notable — short email (but still include weekly summary on Fridays)
   if (digestData.nothing_notable && !(weeklyBullets && weeklyBullets.length > 0)) {
     return `
@@ -177,9 +207,11 @@ export async function sendDigestEmail(digestData, weeklyBullets = null) {
     day: 'numeric',
   });
 
-  const subject = weeklyBullets
-    ? `Weekly Review + Signal \u2014 ${dateStr}`
-    : `Signal \u2014 ${dateStr}`;
+  const subject = digestData.error
+    ? `[ERROR] Signal \u2014 ${dateStr}`
+    : weeklyBullets
+      ? `Weekly Review + Signal \u2014 ${dateStr}`
+      : `Signal \u2014 ${dateStr}`;
 
   const html = buildDigestHtml(digestData, weeklyBullets);
 

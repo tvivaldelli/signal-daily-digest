@@ -145,14 +145,29 @@ RULES:
 Return ONLY the JSON object, no other text.`;
 
   try {
-    const apiRequest = anthropic.messages.create({
-      model: 'claude-sonnet-4-6-20250514',
-      max_tokens: 8000,
-      temperature: 0.25,
-      messages: [{ role: 'user', content: prompt }]
-    });
+    let message;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const apiRequest = anthropic.messages.create({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 8000,
+          temperature: 0.25,
+          messages: [{ role: 'user', content: prompt }]
+        });
 
-    const message = await Promise.race([apiRequest, createTimeout(API_TIMEOUT_MS)]);
+        message = await Promise.race([apiRequest, createTimeout(API_TIMEOUT_MS)]);
+        break; // success — exit retry loop
+      } catch (apiError) {
+        console.error(`[Insights] Claude API attempt ${attempt}/2 failed: ${apiError.message}`);
+        if (attempt === 1) {
+          console.log('[Insights] Retrying Claude API call in 15 seconds...');
+          await new Promise(r => setTimeout(r, 15000));
+        } else {
+          throw apiError; // rethrow on final attempt
+        }
+      }
+    }
+
     const responseText = message.content[0].text.trim();
 
     // Parse JSON (handle possible code fences)
@@ -164,12 +179,14 @@ Return ONLY the JSON object, no other text.`;
       digest = JSON.parse(jsonText);
     } catch (parseError) {
       console.error('[Insights] Error parsing Claude response:', parseError.message);
+      console.error('[Insights] Raw response (first 500 chars):', responseText.substring(0, 500));
       return {
         date: new Date().toISOString().split('T')[0],
         top_insights: [],
         competitive_signals: [],
         worth_reading: [],
         nothing_notable: true,
+        error: `Failed to parse Claude response: ${parseError.message}`,
         article_count: articles.length,
         source_count: sourceCount
       };
@@ -257,6 +274,7 @@ Return ONLY the JSON object, no other text.`;
       competitive_signals: [],
       worth_reading: [],
       nothing_notable: true,
+      error: `Claude API failed after 2 attempts: ${error.message}`,
       article_count: articles.length,
       source_count: sourceCount
     };
@@ -298,7 +316,7 @@ Example: ["Bullet one here", "Bullet two here", "Bullet three here"]`;
 
   try {
     const apiRequest = anthropic.messages.create({
-      model: 'claude-sonnet-4-6-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 2000,
       temperature: 0.25,
       messages: [{ role: 'user', content: prompt }]
