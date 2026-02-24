@@ -144,29 +144,45 @@ RULES:
 
 Return ONLY the JSON object, no other text.`;
 
+  const MODELS = ['claude-sonnet-4-6', 'claude-sonnet-4-5'];
+
   try {
     let message;
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        const apiRequest = anthropic.messages.create({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 8000,
-          temperature: 0.25,
-          messages: [{ role: 'user', content: prompt }]
-        });
+    let usedModel;
+    for (const model of MODELS) {
+      let succeeded = false;
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const apiRequest = anthropic.messages.create({
+            model,
+            max_tokens: 8000,
+            temperature: 0.25,
+            messages: [{ role: 'user', content: prompt }]
+          });
 
-        message = await Promise.race([apiRequest, createTimeout(API_TIMEOUT_MS)]);
-        break; // success — exit retry loop
-      } catch (apiError) {
-        console.error(`[Insights] Claude API attempt ${attempt}/2 failed: ${apiError.message}`);
-        if (attempt === 1) {
-          console.log('[Insights] Retrying Claude API call in 15 seconds...');
-          await new Promise(r => setTimeout(r, 15000));
-        } else {
-          throw apiError; // rethrow on final attempt
+          message = await Promise.race([apiRequest, createTimeout(API_TIMEOUT_MS)]);
+          usedModel = model;
+          succeeded = true;
+          break;
+        } catch (apiError) {
+          console.error(`[Insights] ${model} attempt ${attempt}/2 failed: ${apiError.message}`);
+          if (attempt === 1) {
+            console.log(`[Insights] Retrying ${model} in 15 seconds...`);
+            await new Promise(r => setTimeout(r, 15000));
+          }
         }
       }
+      if (succeeded) break;
+      if (model !== MODELS[MODELS.length - 1]) {
+        console.log(`[Insights] ${model} unavailable, falling back to next model...`);
+      }
     }
+
+    if (!message) {
+      throw new Error(`All models failed (tried: ${MODELS.join(', ')})`);
+    }
+
+    console.log(`[Insights] Using model: ${usedModel}`);
 
     const responseText = message.content[0].text.trim();
 
