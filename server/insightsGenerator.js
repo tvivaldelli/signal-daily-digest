@@ -81,10 +81,10 @@ export async function generateInsights(articles) {
     }
   }
 
-  const prompt = `You are a daily intelligence analyst for a digital product leader at a mid-size mortgage company.
+  const prompt = `You are a daily intelligence analyst for the digital product team at a mid-size mortgage company.
 
 CONTEXT:
-- You report to someone who owns the digital mortgage experience: online applications, servicing portal, mobile app
+- You report to the team that owns the digital mortgage experience: online applications, servicing portal, mobile app
 - Current priorities: digital self-service, digital originations, mobile app engagement, AI-driven process automation
 - Roadmap themes: servicing retention, loss mitigation automation, borrower communication
 - Key competitors: Rocket Mortgage, United Wholesale Mortgage, loanDepot, PennyMac
@@ -98,6 +98,7 @@ FILTERING CRITERIA — Only include in top_insights or competitive_signals if at
 2. Signals a technology shift that could change mortgage origination or servicing
 3. Represents a competitor move that requires attention or creates an opportunity
 4. Provides actionable intelligence for a digital product roadmap
+5. Highlights a product launch, UX change, or digital experience update from a competitor or fintech disruptor
 
 For worth_reading, also include strong product management content (frameworks, practices, case studies, AI/workflow thinking) even if it has no direct mortgage connection — it informs how the PM works, not just what they work on.
 

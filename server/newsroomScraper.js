@@ -146,6 +146,191 @@ export async function scrapeBlendNewsroom(maxItems = 10) {
 }
 
 /**
+ * Scrape UWM press releases / newsroom
+ */
+export async function scrapeUWMNewsroom(maxItems = 10) {
+  return scrapeNewsroom(
+    'https://www.uwm.com/news',
+    ($, max) => {
+      const articles = [];
+
+      $('a[href*="/news/"]').each((i, el) => {
+        if (articles.length >= max) return false;
+
+        const $el = $(el);
+        const href = $el.attr('href') || '';
+        const title = $el.find('h2, h3, h4').first().text().trim() ||
+          $el.text().trim();
+
+        if (!title || title.length < 10) return;
+        if (articles.some(a => a.title === title || a.link === href)) return;
+
+        const link = href.startsWith('http') ? href : `https://www.uwm.com${href}`;
+
+        const $parent = $el.closest('li, div, article');
+        const dateText = $parent.find('time, [datetime], .date').first().text().trim();
+        const pubDate = dateText ? new Date(dateText).toISOString() : new Date().toISOString();
+
+        articles.push({
+          title,
+          link,
+          pubDate,
+          summary: '',
+          originalContent: '',
+          imageUrl: null,
+          contentHtml: null,
+          hasFullContent: false,
+        });
+      });
+
+      return articles;
+    },
+    'UWM Newsroom',
+    maxItems
+  );
+}
+
+/**
+ * Scrape Better.com blog / newsroom
+ */
+export async function scrapeBetterBlog(maxItems = 10) {
+  return scrapeNewsroom(
+    'https://better.com/content',
+    ($, max) => {
+      const articles = [];
+
+      $('a[href*="/content/"]').each((i, el) => {
+        if (articles.length >= max) return false;
+
+        const $el = $(el);
+        const href = $el.attr('href') || '';
+
+        // Skip navigation / category links
+        if (href === '/content/' || href.endsWith('/content')) return;
+
+        const $card = $el.closest('div, article, li');
+        let title = $el.find('h2, h3, h4').first().text().trim() ||
+          $card.find('h2, h3, h4').first().text().trim() ||
+          $el.text().trim();
+
+        if (!title || title.length < 10) return;
+        if (title.length > 200) title = title.substring(0, 200);
+        if (articles.some(a => a.title === title || a.link === href)) return;
+
+        const link = href.startsWith('http') ? href : `https://better.com${href}`;
+
+        articles.push({
+          title,
+          link,
+          pubDate: new Date().toISOString(),
+          summary: '',
+          originalContent: '',
+          imageUrl: null,
+          contentHtml: null,
+          hasFullContent: false,
+        });
+      });
+
+      return articles;
+    },
+    'Better.com Blog',
+    maxItems
+  );
+}
+
+/**
+ * Scrape Beeline (formerly Guaranteed Rate) blog
+ */
+export async function scrapeBeeline(maxItems = 10) {
+  return scrapeNewsroom(
+    'https://www.beeline.com/blog',
+    ($, max) => {
+      const articles = [];
+
+      $('a[href*="/blog/"]').each((i, el) => {
+        if (articles.length >= max) return false;
+
+        const $el = $(el);
+        const href = $el.attr('href') || '';
+        if (href === '/blog/' || href.endsWith('/blog')) return;
+
+        const $card = $el.closest('div, article, li');
+        let title = $el.find('h2, h3, h4').first().text().trim() ||
+          $card.find('h2, h3, h4').first().text().trim() ||
+          $el.text().trim();
+
+        if (!title || title.length < 10) return;
+        if (title.length > 200) title = title.substring(0, 200);
+        if (articles.some(a => a.title === title || a.link === href)) return;
+
+        const link = href.startsWith('http') ? href : `https://www.beeline.com${href}`;
+
+        articles.push({
+          title,
+          link,
+          pubDate: new Date().toISOString(),
+          summary: '',
+          originalContent: '',
+          imageUrl: null,
+          contentHtml: null,
+          hasFullContent: false,
+        });
+      });
+
+      return articles;
+    },
+    'Beeline Blog',
+    maxItems
+  );
+}
+
+/**
+ * Scrape Tomo blog
+ */
+export async function scrapeTomo(maxItems = 10) {
+  return scrapeNewsroom(
+    'https://www.tomo.com/blog',
+    ($, max) => {
+      const articles = [];
+
+      $('a[href*="/blog/"]').each((i, el) => {
+        if (articles.length >= max) return false;
+
+        const $el = $(el);
+        const href = $el.attr('href') || '';
+        if (href === '/blog/' || href.endsWith('/blog')) return;
+
+        const $card = $el.closest('div, article, li');
+        let title = $el.find('h2, h3, h4').first().text().trim() ||
+          $card.find('h2, h3, h4').first().text().trim() ||
+          $el.text().trim();
+
+        if (!title || title.length < 10) return;
+        if (title.length > 200) title = title.substring(0, 200);
+        if (articles.some(a => a.title === title || a.link === href)) return;
+
+        const link = href.startsWith('http') ? href : `https://www.tomo.com${href}`;
+
+        articles.push({
+          title,
+          link,
+          pubDate: new Date().toISOString(),
+          summary: '',
+          originalContent: '',
+          imageUrl: null,
+          contentHtml: null,
+          hasFullContent: false,
+        });
+      });
+
+      return articles;
+    },
+    'Tomo Blog',
+    maxItems
+  );
+}
+
+/**
  * Scrape ICE Mortgage Technology press releases
  * Parses table layout, filters to "Mortgage Technology" category only
  */

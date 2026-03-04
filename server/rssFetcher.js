@@ -3,7 +3,7 @@ import { readFile } from 'fs/promises';
 import sanitizeHtml from 'sanitize-html';
 import { saveArticle } from './db.js';
 import { decode } from 'html-entities';
-import { scrapeRocketPressReleases, scrapeBlendNewsroom, scrapeICEMortgageTech } from './newsroomScraper.js';
+import { scrapeRocketPressReleases, scrapeBlendNewsroom, scrapeICEMortgageTech, scrapeUWMNewsroom, scrapeBetterBlog, scrapeBeeline, scrapeTomo } from './newsroomScraper.js';
 
 const parser = new Parser({
   customFields: {
@@ -298,7 +298,7 @@ export async function fetchAllFeeds() {
   const config = await loadSources();
   const startTime = Date.now();
 
-  console.log(`\nFetching from ${config.sources.length} RSS sources + 3 scrapers (parallel, max 5 concurrent)...`);
+  console.log(`\nFetching from ${config.sources.length} RSS sources + 7 scrapers (parallel, max 5 concurrent)...`);
 
   // Fetch RSS feeds with concurrency limiter
   const limit = createLimiter(5);
@@ -306,15 +306,19 @@ export async function fetchAllFeeds() {
     config.sources.map(source => limit(() => fetchRSS(source)))
   );
 
-  // Run all 3 newsroom scrapers in parallel
-  const [rocketArticles, blendArticles, iceArticles] = await Promise.all([
+  // Run all newsroom scrapers in parallel
+  const [rocketArticles, blendArticles, iceArticles, uwmArticles, betterArticles, beelineArticles, tomoArticles] = await Promise.all([
     scrapeRocketPressReleases(10),
     scrapeBlendNewsroom(10),
-    scrapeICEMortgageTech(10)
+    scrapeICEMortgageTech(10),
+    scrapeUWMNewsroom(10),
+    scrapeBetterBlog(10),
+    scrapeBeeline(10),
+    scrapeTomo(10)
   ]);
 
   // Save scraped articles to DB
-  const scraperArticles = [...rocketArticles, ...blendArticles, ...iceArticles];
+  const scraperArticles = [...rocketArticles, ...blendArticles, ...iceArticles, ...uwmArticles, ...betterArticles, ...beelineArticles, ...tomoArticles];
   for (const article of scraperArticles) {
     try {
       await saveArticle(article);
