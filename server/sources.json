@@ -83,6 +83,12 @@
       "category": "competitor-intel",
       "url": "https://seekingalpha.com/symbol/LDI",
       "rss": "https://seekingalpha.com/api/sa/combined/LDI.xml"
+    },
+    {
+      "name": "Better.com (SA)",
+      "category": "competitor-intel",
+      "url": "https://seekingalpha.com/symbol/BETR",
+      "rss": "https://seekingalpha.com/api/sa/combined/BETR.xml"
     }
   ]
 }
