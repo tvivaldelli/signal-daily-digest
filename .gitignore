@@ -24,9 +24,6 @@ npm-debug.log
 .DS_Store
 Thumbs.db
 
-# Replit
-.replit
-replit.nix
 
 # Testing
 coverage/

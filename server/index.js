@@ -16,24 +16,11 @@ app.get('/run-digest', (req, res) => {
     return res.status(401).json({ error: 'unauthorized' });
   }
 
-  // Keep the response open until the pipeline completes. This prevents Replit
-  // Autoscale (Cloud Run) from killing the container — it considers the request
-  // active until res.end() is called. cron-job.org will disconnect at its ~30s
-  // timeout, but that's fine; Cloud Run still tracks the server-side response.
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.write(`started: ${new Date().toISOString()}\n`);
+  res.json({ status: 'started', time: new Date().toISOString() });
 
-  // Swallow write errors when the client (cron-job.org) disconnects early
-  res.on('error', () => {});
-
-  runDailyDigest()
-    .then(() => {
-      try { res.end(`done: ${new Date().toISOString()}\n`); } catch (e) { /* client gone */ }
-    })
-    .catch(error => {
-      console.error('[API] Digest trigger failed:', error.message);
-      try { res.end(`error: ${error.message}\n`); } catch (e) { /* client gone */ }
-    });
+  runDailyDigest().catch(error => {
+    console.error('[API] Digest trigger failed:', error.message);
+  });
 });
 
 app.get('/health', (req, res) => {
