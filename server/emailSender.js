@@ -6,7 +6,7 @@ function getResend() {
   return resend;
 }
 const FROM_ADDRESS = 'onboarding@resend.dev';
-const APP_URL = process.env.APP_URL || 'https://mortgage-intel-hub.replit.app';
+const APP_URL = process.env.APP_URL || 'http://100.99.202.60:3001';
 
 /**
  * Build the HTML email body for a daily digest
