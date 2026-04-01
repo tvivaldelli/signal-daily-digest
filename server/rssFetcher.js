@@ -151,7 +151,7 @@ function extractImageUrl(item) {
 async function loadSources() {
   if (cachedSources) return cachedSources;
   try {
-    const data = await readFile('./sources.json', 'utf8');
+    const data = await readFile(new URL('./sources.json', import.meta.url), 'utf8');
     cachedSources = JSON.parse(data);
     console.log('[RSS] Sources loaded and cached');
     return cachedSources;
