@@ -2,10 +2,14 @@
   "name": "signal",
   "version": "2.0.0",
   "description": "Daily email digest of mortgage industry intelligence powered by AI",
+  "type": "module",
   "main": "index.js",
   "scripts": {
     "start": "cd server && npm start",
-    "migrate": "cd server && node migrate-archive.js"
+    "migrate": "cd server && node migrate-archive.js",
+    "dedup:status": "node scripts/dedup-status.js",
+    "dedup:reset": "node scripts/dedup-reset.js",
+    "test": "node --test test/dedup.test.js"
   },
   "keywords": [],
   "author": "",

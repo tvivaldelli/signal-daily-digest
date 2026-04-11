@@ -35,6 +35,19 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_saved_at ON articles(saved_at);
 `);
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS featured_articles (
+    url TEXT PRIMARY KEY,
+    title TEXT,
+    section TEXT NOT NULL CHECK (section IN ('top_insight', 'competitive_signal', 'worth_reading')),
+    first_featured_date TEXT NOT NULL DEFAULT (datetime('now')),
+    last_featured_date TEXT NOT NULL DEFAULT (datetime('now')),
+    feature_count INTEGER NOT NULL DEFAULT 1
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_featured_section_date ON featured_articles(section, last_featured_date);
+`);
+
 console.log('[DB] Database initialized');
 
 function mapRow(row) {
@@ -193,10 +206,45 @@ export async function getArticleById(id) {
   }
 }
 
+/**
+ * Get URLs featured in a given section within the last N days
+ * @param {string} section - 'top_insight', 'competitive_signal', or 'worth_reading'
+ * @param {number} days - Lookback window in days
+ * @returns {string[]} Array of URLs
+ */
+export function getRecentlyFeaturedUrls(section, days) {
+  const rows = db.prepare(`
+    SELECT url FROM featured_articles
+    WHERE section = ? AND last_featured_date >= datetime('now', ?)
+  `).all(section, `-${days} days`);
+  return rows.map(r => r.url);
+}
+
+/**
+ * Record an article as featured (upsert: bumps count + date on conflict)
+ * @param {string} url
+ * @param {string} title
+ * @param {string} section - 'top_insight', 'competitive_signal', or 'worth_reading'
+ */
+export function markArticleFeatured(url, title, section) {
+  db.prepare(`
+    INSERT INTO featured_articles (url, title, section)
+    VALUES (?, ?, ?)
+    ON CONFLICT (url) DO UPDATE SET
+      last_featured_date = datetime('now'),
+      feature_count = featured_articles.feature_count + 1
+  `).run(url, title, section);
+}
+
+/** Expose the db instance for tests and CLI scripts */
+export { db };
+
 export default {
   saveArticle,
   getArticles,
   getArticleById,
   getSources,
-  cleanOldArticles
+  cleanOldArticles,
+  getRecentlyFeaturedUrls,
+  markArticleFeatured
 };

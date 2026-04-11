@@ -1,7 +1,7 @@
 import cron from 'node-cron';
 import { fetchAllFeeds } from './rssFetcher.js';
-import { getArticles, cleanOldArticles } from './db.js';
-import { generateInsights, generateWeeklySummary } from './insightsGenerator.js';
+import { getArticles, cleanOldArticles, markArticleFeatured, getRecentlyFeaturedUrls } from './db.js';
+import { generateInsights, generateWeeklySummary, SLOW_DAY_THRESHOLD } from './insightsGenerator.js';
 import { sendDigestEmail } from './emailSender.js';
 import { appendDigest, readRecentDigests } from './archiver.js';
 
@@ -18,10 +18,16 @@ export const digestState = {
 
 /**
  * Run the full daily digest pipeline
+ * @param {Object} options
+ * @param {boolean} options.dryRun - Skip Claude, send, write-back; print exclusion report
+ * @param {boolean} options.dryRunWithClaude - Like dryRun but runs the real Claude call
  */
-export async function runDailyDigest() {
+export async function runDailyDigest(options = {}) {
+  const { dryRun = false, dryRunWithClaude = false } = options;
+  const isDryRun = dryRun || dryRunWithClaude;
   const startTime = Date.now();
-  console.log(`\n[Signal] Starting daily digest pipeline at ${new Date().toISOString()}`);
+  const modeLabel = dryRunWithClaude ? ' (DRY RUN + CLAUDE)' : dryRun ? ' (DRY RUN)' : '';
+  console.log(`\n[Signal] Starting daily digest pipeline at ${new Date().toISOString()}${modeLabel}`);
 
   try {
     // 1. Fetch RSS + scrape newsrooms
@@ -52,8 +58,53 @@ export async function runDailyDigest() {
       return;
     }
 
-    // 4. Generate insights via Claude
-    const digest = await generateInsights(articles);
+    // 4. Generate insights (or print exclusion report in cheap dry-run)
+    let digest;
+    if (dryRun && !dryRunWithClaude) {
+      // Cheap dry-run: exclusion report without Claude API call
+      const excludedInsights = getRecentlyFeaturedUrls('top_insight', 7);
+      const excludedSignals = getRecentlyFeaturedUrls('competitive_signal', 7);
+      const excludedWR = getRecentlyFeaturedUrls('worth_reading', 30);
+
+      const contentArticles = articles.filter(a => a.type !== 'youtube' || a.originalContent);
+      const excludedSet = new Set(excludedInsights);
+      const candidates = contentArticles.filter(a => !excludedSet.has(a.link));
+
+      console.log('\n[DRY RUN] Exclusion report (Claude API skipped):');
+      console.log(`  Total articles: ${articles.length}`);
+      console.log(`  Content articles: ${contentArticles.length}`);
+      console.log(`  Excluded top_insight URLs (7d): ${excludedInsights.length}`);
+      console.log(`  Excluded competitive_signal URLs (7d): ${excludedSignals.length}`);
+      console.log(`  Excluded worth_reading URLs (30d): ${excludedWR.length}`);
+      console.log(`  Non-excluded candidates for top_insight: ${candidates.length}`);
+
+      if (candidates.length < SLOW_DAY_THRESHOLD) {
+        console.log(`  → SLOW DAY would trigger (threshold: ${SLOW_DAY_THRESHOLD})`);
+      }
+
+      if (candidates.length > 0) {
+        console.log('\n  Candidate articles (not excluded from top_insight):');
+        for (const a of candidates.slice(0, 20)) {
+          console.log(`    - ${a.title} (${a.source})`);
+          console.log(`      ${a.link}`);
+        }
+        if (candidates.length > 20) console.log(`    ... and ${candidates.length - 20} more`);
+      }
+
+      const sourceCount = new Set(articles.map(a => a.source)).size;
+      digest = {
+        date: new Date().toISOString().split('T')[0],
+        top_insights: [],
+        competitive_signals: [],
+        worth_reading: [],
+        nothing_notable: candidates.length < SLOW_DAY_THRESHOLD,
+        slow_day: candidates.length < SLOW_DAY_THRESHOLD,
+        article_count: articles.length,
+        source_count: sourceCount
+      };
+    } else {
+      digest = await generateInsights(articles);
+    }
 
     // 4b. Enrich digest items with article IDs for reader link routing
     const articlesByUrl = new Map(articles.map(a => [a.link, a]));
@@ -82,14 +133,62 @@ export async function runDailyDigest() {
       weeklyBullets = await generateWeeklySummary(recentDigests);
     }
 
-    // 6. Send email
-    const emailResult = await sendDigestEmail(digest, weeklyBullets);
+    // 6. Send email (or print in dry-run mode)
+    let emailResult;
+    if (isDryRun) {
+      const date = new Date(digest.date || Date.now());
+      const dateStr = date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+      const subject = digest.slow_day
+        ? 'Signal \u2014 Slow Day'
+        : weeklyBullets
+          ? `Weekly Review + Signal \u2014 ${dateStr}`
+          : `Signal \u2014 ${dateStr}`;
+
+      console.log('\n[DRY RUN] Would send email:');
+      console.log(`  To: ${process.env.DIGEST_EMAIL}`);
+      console.log(`  Subject: ${subject}`);
+      console.log(`  Insights: ${digest.top_insights?.length || 0}`);
+      console.log(`  Signals: ${digest.competitive_signals?.length || 0}`);
+      console.log(`  Worth reading: ${digest.worth_reading?.length || 0}`);
+      if (digest.slow_day) console.log('  Body: Nothing material today. See you tomorrow.');
+      emailResult = { status: 'dry_run' };
+    } else {
+      emailResult = await sendDigestEmail(digest, weeklyBullets);
+    }
     digestState.emailStatus = emailResult.status;
 
-    // 7. Archive to JSONL (always, even if email fails)
-    await appendDigest(digest);
+    // 7. Write featured URLs to dedup table (only on successful send, never dry-run)
+    if (emailResult.status === 'sent' && !digest.slow_day) {
+      const writeBackItems = [
+        ...(digest.top_insights || []).map(i => ({ url: i.url, title: i.headline, section: 'top_insight' })),
+        ...(digest.competitive_signals || []).map(s => ({ url: s.url, title: s.signal, section: 'competitive_signal' })),
+        ...(digest.worth_reading || []).map(w => ({ url: w.url, title: w.title, section: 'worth_reading' })),
+      ].filter(item => item.url);
 
-    // 8. Update state
+      for (const item of writeBackItems) {
+        markArticleFeatured(item.url, item.title, item.section);
+      }
+      console.log(`[Signal] Wrote ${writeBackItems.length} URLs to featured_articles`);
+    } else if (isDryRun && !digest.slow_day) {
+      const wouldWrite = [
+        ...(digest.top_insights || []).map(i => i.url),
+        ...(digest.competitive_signals || []).map(s => s.url),
+        ...(digest.worth_reading || []).map(w => w.url),
+      ].filter(Boolean);
+      if (wouldWrite.length > 0) {
+        console.log(`\n[DRY RUN] Would write ${wouldWrite.length} URLs to featured_articles:`);
+        for (const url of wouldWrite) console.log(`  - ${url}`);
+      }
+    }
+
+    // 8. Archive to JSONL (always, even if email fails — but skip in dry-run)
+    if (!isDryRun) {
+      await appendDigest(digest);
+    } else {
+      console.log('\n[DRY RUN] Skipped JSONL archive write');
+    }
+
+    // 9. Update state
     digestState.lastDigestRun = new Date().toISOString();
     digestState.lastError = null;
 

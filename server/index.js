@@ -16,9 +16,12 @@ app.get('/run-digest', (req, res) => {
     return res.status(401).json({ error: 'unauthorized' });
   }
 
-  res.json({ status: 'started', time: new Date().toISOString() });
+  const dryRun = req.query.dry_run === 'true';
+  const dryRunWithClaude = req.query.dry_run_with_claude === 'true';
+  const mode = dryRunWithClaude ? 'dry_run_with_claude' : dryRun ? 'dry_run' : 'live';
+  res.json({ status: 'started', mode, time: new Date().toISOString() });
 
-  runDailyDigest().catch(error => {
+  runDailyDigest({ dryRun, dryRunWithClaude }).catch(error => {
     console.error('[API] Digest trigger failed:', error.message);
   });
 });
