@@ -1,10 +1,14 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { getRecentlyFeaturedUrls } from './db.js';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY
 });
 
 const API_TIMEOUT_MS = 180000;
+
+/** Minimum non-excluded candidate articles required to run the full pipeline */
+export const SLOW_DAY_THRESHOLD = 2;
 
 function createTimeout(ms) {
   return new Promise((_, reject) => {
@@ -30,6 +34,36 @@ export async function generateInsights(articles) {
     };
   }
 
+  // Separate enriched YouTube videos (with descriptions) from title-only ones
+  const enrichedYouTube = articles.filter(a => a.type === 'youtube' && a.originalContent);
+  const titleOnlyYouTube = articles.filter(a => a.type === 'youtube' && !a.originalContent);
+  const contentArticles = [...articles.filter(a => a.type !== 'youtube'), ...enrichedYouTube];
+
+  const sourceCount = new Set(articles.map(a => a.source)).size;
+
+  // --- Cross-digest dedup: fetch recently featured URLs per section ---
+  const excludedInsightUrls = getRecentlyFeaturedUrls('top_insight', 7);
+  const excludedSignalUrls = getRecentlyFeaturedUrls('competitive_signal', 7);
+  const excludedWorthReadingUrls = getRecentlyFeaturedUrls('worth_reading', 30);
+
+  // Slow-day check: count content articles NOT already excluded from top_insights
+  const excludedInsightSet = new Set(excludedInsightUrls);
+  const candidateCount = contentArticles.filter(a => !excludedInsightSet.has(a.link)).length;
+
+  if (candidateCount < SLOW_DAY_THRESHOLD) {
+    console.log(`[Insights] Slow day: only ${candidateCount} non-excluded candidate(s) (threshold: ${SLOW_DAY_THRESHOLD})`);
+    return {
+      date: new Date().toISOString().split('T')[0],
+      top_insights: [],
+      competitive_signals: [],
+      worth_reading: [],
+      nothing_notable: true,
+      slow_day: true,
+      article_count: articles.length,
+      source_count: sourceCount
+    };
+  }
+
   if (!process.env.ANTHROPIC_API_KEY) {
     console.log('[Insights] No API key configured, returning nothing-notable');
     return {
@@ -39,14 +73,9 @@ export async function generateInsights(articles) {
       worth_reading: [],
       nothing_notable: true,
       article_count: articles.length,
-      source_count: new Set(articles.map(a => a.source)).size
+      source_count: sourceCount
     };
   }
-
-  // Separate enriched YouTube videos (with descriptions) from title-only ones
-  const enrichedYouTube = articles.filter(a => a.type === 'youtube' && a.originalContent);
-  const titleOnlyYouTube = articles.filter(a => a.type === 'youtube' && !a.originalContent);
-  const contentArticles = [...articles.filter(a => a.type !== 'youtube'), ...enrichedYouTube];
 
   // Group content articles by category
   const grouped = {};
@@ -64,8 +93,6 @@ export async function generateInsights(articles) {
     });
   }
 
-  const sourceCount = new Set(articles.map(a => a.source)).size;
-
   let articleBlock = '';
   for (const [category, items] of Object.entries(grouped)) {
     articleBlock += `\n## ${category.toUpperCase()} (${items.length} articles)\n`;
@@ -79,6 +106,21 @@ export async function generateInsights(articles) {
     for (const item of titleOnlyYouTube) {
       articleBlock += `- ${item.title} (${item.source}) — ${item.link}\n`;
     }
+  }
+
+  // Build exclusion blocks for the prompt
+  let exclusionBlock = '';
+  if (excludedInsightUrls.length > 0) {
+    exclusionBlock += `\nEXCLUSION LIST — TOP INSIGHTS (featured in the last 7 days, do NOT select these):
+${excludedInsightUrls.map(u => `- ${u}`).join('\n')}\n`;
+  }
+  if (excludedSignalUrls.length > 0) {
+    exclusionBlock += `\nEXCLUSION LIST — COMPETITIVE SIGNALS (featured in the last 7 days, do NOT select these):
+${excludedSignalUrls.map(u => `- ${u}`).join('\n')}\n`;
+  }
+  if (excludedWorthReadingUrls.length > 0) {
+    exclusionBlock += `\nEXCLUSION LIST — WORTH READING (featured in the last 30 days, do NOT select these):
+${excludedWorthReadingUrls.map(u => `- ${u}`).join('\n')}\n`;
   }
 
   const prompt = `You are a daily intelligence analyst for the digital product team at a mid-size mortgage company.
@@ -103,7 +145,7 @@ FILTERING CRITERIA — Only include in top_insights or competitive_signals if at
 For worth_reading, also include strong product management content (frameworks, practices, case studies, AI/workflow thinking) even if it has no direct mortgage connection — it informs how the PM works, not just what they work on.
 
 Skip: generic market commentary, rate predictions, political/regulatory speculation without specific impact, content that's behind a paywall with no useful summary.
-
+${exclusionBlock}
 OUTPUT FORMAT (strict JSON, no markdown fences):
 {
   "date": "${new Date().toISOString().split('T')[0]}",
@@ -120,7 +162,8 @@ OUTPUT FORMAT (strict JSON, no markdown fences):
     {
       "competitor": "Company name",
       "signal": "What they did",
-      "implication": "What it means for mortgage product strategy"
+      "implication": "What it means for mortgage product strategy",
+      "url": "Article URL"
     }
   ],
   "worth_reading": [
@@ -142,6 +185,7 @@ RULES:
 - If genuinely nothing is notable today, set nothing_notable: true and leave arrays empty.
 - Never fabricate URLs — only use URLs from the articles provided.
 - Do not generate insights from YouTube video titles alone.
+- NEVER use any URL from the EXCLUSION LISTS above. If an excluded article seems important, find a different source covering the same topic.
 
 Return ONLY the JSON object, no other text.`;
 
