@@ -134,13 +134,19 @@ export function buildDigestHtml(digestData, weeklyBullets = null) {
 
   // Competitive Signals (only if they exist)
   if (digestData.competitive_signals && digestData.competitive_signals.length > 0) {
-    const signalItems = digestData.competitive_signals.map(signal => `
+    const signalItems = digestData.competitive_signals.map(signal => {
+      const readUrl = (signal.has_full_content && signal.article_id)
+        ? `${APP_URL}/read/${signal.article_id}`
+        : signal.url;
+      return `
       <div style="margin-bottom:12px;padding:12px;background:#fef9ee;border-radius:6px;">
         <p style="font-size:14px;color:#333;margin:0 0 4px;">
           <strong>${escapeHtml(signal.competitor)}</strong>: ${escapeHtml(signal.signal)}
         </p>
-        <p style="font-size:13px;color:#666;margin:0;"><em>Implication: ${escapeHtml(signal.implication)}</em></p>
-      </div>`).join('');
+        <p style="font-size:13px;color:#666;margin:0 0 4px;"><em>Implication: ${escapeHtml(signal.implication)}</em></p>
+        ${readUrl ? `<p style="font-size:12px;color:#888;margin:0;"><a href="${escapeHtml(readUrl)}" style="color:#2563eb;">Read</a></p>` : ''}
+      </div>`;
+    }).join('');
 
     sections += `
     <div style="margin-bottom:28px;">
