@@ -41,17 +41,27 @@ export async function generateInsights(articles) {
 
   const sourceCount = new Set(articles.map(a => a.source)).size;
 
-  // --- Cross-digest dedup: fetch recently featured URLs per section ---
+  // --- Cross-digest dedup: filter excluded URLs out of candidates server-side ---
+  // Union the three section windows so an article excluded from any section is hidden from Claude entirely.
   const excludedInsightUrls = getRecentlyFeaturedUrls('top_insight', 7);
   const excludedSignalUrls = getRecentlyFeaturedUrls('competitive_signal', 7);
   const excludedWorthReadingUrls = getRecentlyFeaturedUrls('worth_reading', 30);
+  const excludedSet = new Set([
+    ...excludedInsightUrls,
+    ...excludedSignalUrls,
+    ...excludedWorthReadingUrls,
+  ]);
 
-  // Slow-day check: count content articles NOT already excluded from top_insights
-  const excludedInsightSet = new Set(excludedInsightUrls);
-  const candidateCount = contentArticles.filter(a => !excludedInsightSet.has(a.link)).length;
+  const preFilterContent = contentArticles.length;
+  const preFilterYouTube = titleOnlyYouTube.length;
+  const filteredContentArticles = contentArticles.filter(a => !excludedSet.has(a.link));
+  const filteredTitleOnlyYouTube = titleOnlyYouTube.filter(a => !excludedSet.has(a.link));
+  const excludedCount = (preFilterContent - filteredContentArticles.length) +
+                        (preFilterYouTube - filteredTitleOnlyYouTube.length);
+  console.log(`[Insights] URL filter excluded ${excludedCount} article(s); ${filteredContentArticles.length} content + ${filteredTitleOnlyYouTube.length} youtube candidate(s) remain`);
 
-  if (candidateCount < SLOW_DAY_THRESHOLD) {
-    console.log(`[Insights] Slow day: only ${candidateCount} non-excluded candidate(s) (threshold: ${SLOW_DAY_THRESHOLD})`);
+  if (filteredContentArticles.length < SLOW_DAY_THRESHOLD) {
+    console.log(`[Insights] Slow day: only ${filteredContentArticles.length} non-excluded candidate(s) (threshold: ${SLOW_DAY_THRESHOLD})`);
     return {
       date: new Date().toISOString().split('T')[0],
       top_insights: [],
@@ -79,7 +89,7 @@ export async function generateInsights(articles) {
 
   // Group content articles by category
   const grouped = {};
-  for (const article of contentArticles) {
+  for (const article of filteredContentArticles) {
     const cat = article.category || 'uncategorized';
     if (!grouped[cat]) grouped[cat] = [];
     grouped[cat].push({
@@ -101,26 +111,11 @@ export async function generateInsights(articles) {
     }
   }
 
-  if (titleOnlyYouTube.length > 0) {
-    articleBlock += `\n## YOUTUBE VIDEOS (${titleOnlyYouTube.length} items — titles only, do NOT generate insights from video titles)\n`;
-    for (const item of titleOnlyYouTube) {
+  if (filteredTitleOnlyYouTube.length > 0) {
+    articleBlock += `\n## YOUTUBE VIDEOS (${filteredTitleOnlyYouTube.length} items — titles only, do NOT generate insights from video titles)\n`;
+    for (const item of filteredTitleOnlyYouTube) {
       articleBlock += `- ${item.title} (${item.source}) — ${item.link}\n`;
     }
-  }
-
-  // Build exclusion blocks for the prompt
-  let exclusionBlock = '';
-  if (excludedInsightUrls.length > 0) {
-    exclusionBlock += `\nEXCLUSION LIST — TOP INSIGHTS (featured in the last 7 days, do NOT select these):
-${excludedInsightUrls.map(u => `- ${u}`).join('\n')}\n`;
-  }
-  if (excludedSignalUrls.length > 0) {
-    exclusionBlock += `\nEXCLUSION LIST — COMPETITIVE SIGNALS (featured in the last 7 days, do NOT select these):
-${excludedSignalUrls.map(u => `- ${u}`).join('\n')}\n`;
-  }
-  if (excludedWorthReadingUrls.length > 0) {
-    exclusionBlock += `\nEXCLUSION LIST — WORTH READING (featured in the last 30 days, do NOT select these):
-${excludedWorthReadingUrls.map(u => `- ${u}`).join('\n')}\n`;
   }
 
   const prompt = `You are a daily intelligence analyst for the digital product team at a mid-size mortgage company.
@@ -132,7 +127,7 @@ CONTEXT:
 - Key competitors: Rocket Mortgage, United Wholesale Mortgage, loanDepot, PennyMac
 - Fintech disruptors: Better, Blend, Figure, Beeline, Tomo, ICE Mortgage Technology
 
-TODAY'S ARTICLES (${contentArticles.length} content articles + ${titleOnlyYouTube.length} title-only videos from ${sourceCount} sources):
+TODAY'S ARTICLES (${filteredContentArticles.length} content articles + ${filteredTitleOnlyYouTube.length} title-only videos from ${sourceCount} sources):
 ${articleBlock}
 
 FILTERING CRITERIA — Only include in top_insights or competitive_signals if at least ONE:
@@ -145,7 +140,7 @@ FILTERING CRITERIA — Only include in top_insights or competitive_signals if at
 For worth_reading, also include strong product management content (frameworks, practices, case studies, AI/workflow thinking) even if it has no direct mortgage connection — it informs how the PM works, not just what they work on.
 
 Skip: generic market commentary, rate predictions, political/regulatory speculation without specific impact, content that's behind a paywall with no useful summary.
-${exclusionBlock}
+
 OUTPUT FORMAT (strict JSON, no markdown fences):
 {
   "date": "${new Date().toISOString().split('T')[0]}",
@@ -185,7 +180,6 @@ RULES:
 - If genuinely nothing is notable today, set nothing_notable: true and leave arrays empty.
 - Never fabricate URLs — only use URLs from the articles provided.
 - Do not generate insights from YouTube video titles alone.
-- NEVER use any URL from the EXCLUSION LISTS above. If an excluded article seems important, find a different source covering the same topic.
 
 Return ONLY the JSON object, no other text.`;
 
