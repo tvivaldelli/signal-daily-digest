@@ -35,11 +35,14 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_saved_at ON articles(saved_at);
 `);
 
+/** Valid section values for the featured_articles dedup table */
+export const VALID_SECTIONS = new Set(['top_insight', 'competitive_signal', 'worth_reading', 'pm_craft']);
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS featured_articles (
     url TEXT PRIMARY KEY,
     title TEXT,
-    section TEXT NOT NULL CHECK (section IN ('top_insight', 'competitive_signal', 'worth_reading')),
+    section TEXT NOT NULL,
     first_featured_date TEXT NOT NULL DEFAULT (datetime('now')),
     last_featured_date TEXT NOT NULL DEFAULT (datetime('now')),
     feature_count INTEGER NOT NULL DEFAULT 1
@@ -224,9 +227,12 @@ export function getRecentlyFeaturedUrls(section, days) {
  * Record an article as featured (upsert: bumps count + date on conflict)
  * @param {string} url
  * @param {string} title
- * @param {string} section - 'top_insight', 'competitive_signal', or 'worth_reading'
+ * @param {string} section - one of VALID_SECTIONS
  */
 export function markArticleFeatured(url, title, section) {
+  if (!VALID_SECTIONS.has(section)) {
+    throw new Error(`Invalid section "${section}". Must be one of: ${[...VALID_SECTIONS].join(', ')}`);
+  }
   db.prepare(`
     INSERT INTO featured_articles (url, title, section)
     VALUES (?, ?, ?)

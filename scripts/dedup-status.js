@@ -5,9 +5,9 @@
  * Usage: npm run dedup:status
  */
 
-import { db } from '../server/db.js';
+import { db, VALID_SECTIONS } from '../server/db.js';
 
-const sections = ['top_insight', 'competitive_signal', 'worth_reading'];
+const sections = [...VALID_SECTIONS];
 
 // --- Counts by section ---
 console.log('\n=== Featured Articles by Section ===\n');
