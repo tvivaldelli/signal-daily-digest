@@ -43,8 +43,8 @@ An external cron-job.org trigger may still point at the old Replit URL as a lega
 1. **Fetch** — `rssFetcher.js` parses 15 RSS feeds from `sources.json` (mortgage news, product management, competitor Seeking Alpha feeds, YouTube channels). `newsroomScraper.js` scrapes 7 competitor newsrooms via Cheerio.
 2. **Store** — Articles upserted into SQLite `articles` table. Deduplication on `link` (UNIQUE constraint).
 3. **Query** — Pull articles from last 24 hours.
-4. **Dedup** — Query `featured_articles` table for recently featured URLs. Exclusion windows: 7 days for top_insights/competitive_signals, 30 days for worth_reading. If fewer than `SLOW_DAY_THRESHOLD` (2) non-excluded candidates remain, skip Claude and send a "slow day" email.
-5. **Analyze** — Single Claude API call generates structured digest: top insights, competitive signals, worth-reading links. Exclusion lists injected into the prompt as hard constraints. 180s timeout, retry with model fallback.
+4. **Dedup** — Query `featured_articles` table for recently featured URLs. Exclusion windows: 7 days for top_insights/competitive_signals, 14 days for pm_craft, 30 days for worth_reading. If fewer than `SLOW_DAY_THRESHOLD` (2) non-excluded candidates remain, skip Claude and send a "slow day" email.
+5. **Analyze** — Single Claude API call generates structured digest with two tracks: mortgage intelligence (top insights, competitive signals) and PM craft. Plus worth-reading links. 180s timeout, retry with model fallback.
 6. **Email** — HTML email via Resend to `DIGEST_EMAIL`.
 7. **Write-back** — On successful email send only, write featured URLs to `featured_articles` table (upsert). Failed sends and dry-runs do not write back.
 8. **Archive** — Append digest JSON to JSONL file. On Fridays, generates weekly summary from last 5 archived digests. Slow-day digests archived with `slow_day: true`.
@@ -88,8 +88,9 @@ server/
 scripts/
   dedup-status.js     — npm run dedup:status — featured article counts + worst offenders
   dedup-reset.js      — npm run dedup:reset — truncate featured_articles (with confirmation)
+  migrate-add-pm-craft.js — One-time migration: drop CHECK constraint for pm_craft support
 test/
-  dedup.test.js       — 7 tests covering exclusion windows, slow-day, write-back guards
+  dedup.test.js       — 13 tests covering exclusion windows, slow-day, write-back guards, pm_craft, VALID_SECTIONS
 ```
 
 ## Cross-Digest Dedup
@@ -97,10 +98,34 @@ test/
 The `featured_articles` table prevents the same article from dominating consecutive digests. Key design points:
 
 - **URL is the primary key** — one row per URL regardless of section
-- **Section-specific exclusion windows:** 7 days for `top_insight` and `competitive_signal`, 30 days for `worth_reading`
+- **Valid sections** defined by `VALID_SECTIONS` in db.js: `top_insight`, `competitive_signal`, `pm_craft`, `worth_reading`
+- **Section-specific exclusion windows:** 7 days for `top_insight` and `competitive_signal`, 14 days for `pm_craft`, 30 days for `worth_reading`
+- **App-level validation** — `markArticleFeatured` throws on invalid section names (CHECK constraint was removed in favor of `VALID_SECTIONS` Set)
 - **Write-back only on successful Resend delivery** — failed sends and dry-runs never pollute the table
 - **Slow-day threshold** (`SLOW_DAY_THRESHOLD = 2` in insightsGenerator.js) — if fewer than 2 non-excluded candidates remain, skip Claude and send minimal email
-- **Exclusion lists injected into the Claude prompt** between FILTERING CRITERIA and OUTPUT FORMAT, with a reinforcing rule in RULES
+- **Candidates filtered server-side** — excluded URLs are removed before Claude sees them, so the AI never has to decide whether to re-feature something
+
+## Recent Changes (2026-05-04)
+
+- **pm_craft section shipped** — 5 commits adding a dedicated Product Craft section to the daily digest. PM articles are now evaluated on PM merit alone, not mortgage relevance. Anti-contortion rules in the Claude prompt prevent cross-contamination between mortgage and PM tracks.
+- **Schema migration** — `featured_articles` CHECK constraint replaced with app-level validation (`VALID_SECTIONS` in db.js). Migration script at `scripts/migrate-add-pm-craft.js`.
+- **Test suite expanded** — 7 → 13 tests. New coverage: pm_craft round-trip, 14-day window boundaries, VALID_SECTIONS enforcement, invalid section rejection.
+- **README rewritten** — Updated for current architecture (SQLite, Hetzner VPS, systemd). Removed stale PostgreSQL/Replit references. Public-audience framing.
+- **ISC LICENSE added** at repo root.
+
+## Backlog
+
+Priority order. Items 1-3 need attention in the next week; items 4-5 are low-priority edge cases.
+
+1. **SIGTERM handler in server/index.js** — Call `db.close()` on SIGTERM/SIGINT before process exit. Highest priority. The WAL journal may not flush properly when systemd stops the process, which could explain the empty `featured_articles` table observed before tonight's migration. Without a clean shutdown, SQLite WAL writes can be lost.
+
+2. **Monitor dedup:status for 5-7 mornings** — Run `npm run dedup:status` daily to confirm `featured_articles` rows accumulate after each digest. If they don't, the SIGTERM fix didn't address the root cause and there's a deeper issue with write-back persistence.
+
+3. **competitive_signals health check** — Was producing 0 items 4 of the last 7 days before the prompt rewrite. Tonight's rewrite (two-track prompt with explicit section criteria) produced 3. Need 5-7 more digests to confirm the fix holds. If it regresses, the prompt criteria for competitive_signals may need tightening.
+
+4. **Weekly summarizer ignores worth_reading** — The Friday summary only synthesizes top_insights, competitive_signals, and pm_craft. worth_reading items are excluded from the weekly digest summary. Pre-existing limitation, not introduced in the pm_craft work. Low priority since worth_reading is a catch-all section without strong thematic value.
+
+5. **Upsert quirk in markArticleFeatured** — The `ON CONFLICT (url)` upsert bumps `last_featured_date` and `feature_count` but does not update the `section` field. If the same URL appears in `top_insight` one day and `worth_reading` the next, it keeps its original section. Edge case; low priority since cross-section URL reuse is rare and the dedup filter removes the URL from all sections anyway.
 
 ## Rules
 
