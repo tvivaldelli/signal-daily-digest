@@ -155,6 +155,30 @@ export function buildDigestHtml(digestData, weeklyBullets = null) {
     </div>`;
   }
 
+  // Product Craft (only if they exist)
+  if (digestData.pm_craft && digestData.pm_craft.length > 0) {
+    const craftItems = digestData.pm_craft.map(item => {
+      const readUrl = (item.has_full_content && item.article_id)
+        ? `${APP_URL}/read/${item.article_id}`
+        : item.url;
+      return `
+      <div style="margin-bottom:20px;padding-bottom:20px;border-bottom:1px solid #eee;">
+        <h3 style="font-size:15px;color:#111;margin:0 0 6px;">${escapeHtml(item.headline)}</h3>
+        <p style="font-size:14px;color:#444;line-height:1.6;margin:0 0 6px;">${escapeHtml(item.explanation)}</p>
+        <p style="font-size:13px;color:#666;line-height:1.5;margin:0 0 4px;"><em>${escapeHtml(item.why_it_matters)}</em></p>
+        <p style="font-size:12px;color:#888;margin:0;">
+          Source: ${escapeHtml(item.source)}${readUrl ? ` &mdash; <a href="${escapeHtml(readUrl)}" style="color:#2563eb;">Read</a>` : ''}
+        </p>
+      </div>`;
+    }).join('');
+
+    sections += `
+    <div style="margin-bottom:28px;">
+      <h2 style="font-size:16px;color:#333;margin:0 0 16px;">&#129504; PRODUCT CRAFT</h2>
+      ${craftItems}
+    </div>`;
+  }
+
   // Worth Reading/Watching (max 5)
   if (digestData.worth_reading && digestData.worth_reading.length > 0) {
     const links = digestData.worth_reading.slice(0, 5).map(item => {
