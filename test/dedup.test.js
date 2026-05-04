@@ -1,6 +1,6 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { db, getRecentlyFeaturedUrls, markArticleFeatured } from '../server/db.js';
+import { db, getRecentlyFeaturedUrls, markArticleFeatured, VALID_SECTIONS } from '../server/db.js';
 
 // Clean the featured_articles table before each test
 beforeEach(() => {
@@ -94,6 +94,7 @@ describe('write-back conditions', () => {
     const digest = {
       top_insights: [{ url: 'https://fail.com/1', headline: 'Fail Test' }],
       competitive_signals: [],
+      pm_craft: [{ url: 'https://fail.com/2', headline: 'PM Fail Test' }],
       worth_reading: [],
     };
 
@@ -114,6 +115,7 @@ describe('write-back conditions', () => {
     const digest = {
       top_insights: [{ url: 'https://dry.com/1', headline: 'Dry Test' }],
       competitive_signals: [],
+      pm_craft: [{ url: 'https://dry.com/2', headline: 'PM Dry Test' }],
       worth_reading: [],
     };
 
@@ -128,5 +130,57 @@ describe('write-back conditions', () => {
 
     const rows = db.prepare('SELECT * FROM featured_articles WHERE url = ?').all('https://dry.com/1');
     assert.equal(rows.length, 0, 'Should not write to featured_articles in dry-run mode');
+  });
+});
+
+describe('pm_craft section', () => {
+  it('round-trips pm_craft through markArticleFeatured and getRecentlyFeaturedUrls', () => {
+    markArticleFeatured('https://example.com/pm-article', 'PM Framework', 'pm_craft');
+
+    const excluded = getRecentlyFeaturedUrls('pm_craft', 14);
+    assert.ok(excluded.includes('https://example.com/pm-article'), 'pm_craft article featured today should be excluded');
+  });
+
+  it('excludes a pm_craft article featured 13 days ago (within 14-day window)', () => {
+    db.prepare(`
+      INSERT INTO featured_articles (url, title, section, first_featured_date, last_featured_date, feature_count)
+      VALUES (?, ?, ?, datetime('now', '-13 days'), datetime('now', '-13 days'), 1)
+    `).run('https://example.com/pm-13d', 'PM 13 days ago', 'pm_craft');
+
+    const excluded = getRecentlyFeaturedUrls('pm_craft', 14);
+    assert.ok(excluded.includes('https://example.com/pm-13d'), 'Article from 13 days ago should still be excluded for pm_craft (14-day window)');
+  });
+
+  it('allows a pm_craft article featured 15 days ago (outside 14-day window)', () => {
+    db.prepare(`
+      INSERT INTO featured_articles (url, title, section, first_featured_date, last_featured_date, feature_count)
+      VALUES (?, ?, ?, datetime('now', '-15 days'), datetime('now', '-15 days'), 1)
+    `).run('https://example.com/pm-15d', 'PM 15 days ago', 'pm_craft');
+
+    const excluded = getRecentlyFeaturedUrls('pm_craft', 14);
+    assert.ok(!excluded.includes('https://example.com/pm-15d'), 'Article from 15 days ago should not be excluded for pm_craft (14-day window)');
+  });
+});
+
+describe('VALID_SECTIONS enforcement', () => {
+  it('accepts all valid section names', () => {
+    for (const section of VALID_SECTIONS) {
+      assert.doesNotThrow(
+        () => markArticleFeatured(`https://example.com/valid-${section}`, 'Test', section),
+        `markArticleFeatured should accept section "${section}"`
+      );
+    }
+  });
+
+  it('rejects an invalid section name', () => {
+    assert.throws(
+      () => markArticleFeatured('https://example.com/bad', 'Test', 'not_a_section'),
+      /Invalid section "not_a_section"/,
+      'Should throw on invalid section'
+    );
+  });
+
+  it('includes pm_craft in VALID_SECTIONS', () => {
+    assert.ok(VALID_SECTIONS.has('pm_craft'), 'VALID_SECTIONS should contain pm_craft');
   });
 });
