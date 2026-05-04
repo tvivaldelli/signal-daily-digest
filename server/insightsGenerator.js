@@ -27,6 +27,7 @@ export async function generateInsights(articles) {
       date: new Date().toISOString().split('T')[0],
       top_insights: [],
       competitive_signals: [],
+      pm_craft: [],
       worth_reading: [],
       nothing_notable: true,
       article_count: 0,
@@ -42,13 +43,15 @@ export async function generateInsights(articles) {
   const sourceCount = new Set(articles.map(a => a.source)).size;
 
   // --- Cross-digest dedup: filter excluded URLs out of candidates server-side ---
-  // Union the three section windows so an article excluded from any section is hidden from Claude entirely.
+  // Union section windows so an article excluded from any section is hidden from Claude entirely.
   const excludedInsightUrls = getRecentlyFeaturedUrls('top_insight', 7);
   const excludedSignalUrls = getRecentlyFeaturedUrls('competitive_signal', 7);
+  const excludedPmCraftUrls = getRecentlyFeaturedUrls('pm_craft', 14);
   const excludedWorthReadingUrls = getRecentlyFeaturedUrls('worth_reading', 30);
   const excludedSet = new Set([
     ...excludedInsightUrls,
     ...excludedSignalUrls,
+    ...excludedPmCraftUrls,
     ...excludedWorthReadingUrls,
   ]);
 
@@ -66,6 +69,7 @@ export async function generateInsights(articles) {
       date: new Date().toISOString().split('T')[0],
       top_insights: [],
       competitive_signals: [],
+      pm_craft: [],
       worth_reading: [],
       nothing_notable: true,
       slow_day: true,
@@ -80,6 +84,7 @@ export async function generateInsights(articles) {
       date: new Date().toISOString().split('T')[0],
       top_insights: [],
       competitive_signals: [],
+      pm_craft: [],
       worth_reading: [],
       nothing_notable: true,
       article_count: articles.length,
@@ -118,10 +123,10 @@ export async function generateInsights(articles) {
     }
   }
 
-  const prompt = `You are a daily intelligence analyst for the digital product team at a mid-size mortgage company.
+  const prompt = `You curate a daily intelligence digest with two tracks: mortgage industry intelligence for a digital product team, and product management craft for the curator's professional development.
 
-CONTEXT:
-- You report to the team that owns the digital mortgage experience: online applications, servicing portal, mobile app
+CONTEXT (for mortgage track only):
+- The reader works on the digital mortgage experience: online applications, servicing portal, mobile app
 - Current priorities: digital self-service, digital originations, mobile app engagement, AI-driven process automation
 - Roadmap themes: servicing retention, loss mitigation automation, borrower communication
 - Key competitors: Rocket Mortgage, United Wholesale Mortgage, loanDepot, PennyMac
@@ -130,16 +135,29 @@ CONTEXT:
 TODAY'S ARTICLES (${filteredContentArticles.length} content articles + ${filteredTitleOnlyYouTube.length} title-only videos from ${sourceCount} sources):
 ${articleBlock}
 
-FILTERING CRITERIA — Only include in top_insights or competitive_signals if at least ONE:
+SECTION CRITERIA:
+
+top_insights — Mortgage industry intelligence. Include if at least ONE:
 1. Directly affects mortgage servicing or origination strategy
 2. Signals a technology shift that could change mortgage origination or servicing
 3. Represents a competitor move that requires attention or creates an opportunity
 4. Provides actionable intelligence for a digital product roadmap
 5. Highlights a product launch, UX change, or digital experience update from a competitor or fintech disruptor
 
-For worth_reading, also include strong product management content (frameworks, practices, case studies, AI/workflow thinking) even if it has no direct mortgage connection — it informs how the PM works, not just what they work on.
+pm_craft — Product management craft. Evaluate on PM merit alone, NOT mortgage relevance. Include if it offers:
+1. A product management framework, practice, or mental model
+2. A concrete case study of how a product team made a decision or shipped something
+3. Insight on AI-assisted product work, workflows, or tooling
+4. Leadership, hiring, or team-building wisdom relevant to a senior PM
+5. A sharp essay on craft, judgment, or decision-making in product work
 
-Skip: generic market commentary, rate predictions, political/regulatory speculation without specific impact, content that's behind a paywall with no useful summary.
+Do NOT contort mortgage articles into pm_craft. Do NOT contort PM articles into top_insights. If a PM article happens to have genuine mortgage relevance, it can go in top_insights — but never the reverse.
+
+competitive_signals — Specific competitor moves with strategic implications. Empty array is fine.
+
+worth_reading — Catch-all for articles that didn't make a top section but are worth 5 minutes. Mix of mortgage and PM is fine.
+
+Skip: generic market commentary, rate predictions, political/regulatory speculation without specific impact, content behind a paywall with no useful summary.
 
 OUTPUT FORMAT (strict JSON, no markdown fences):
 {
@@ -161,6 +179,15 @@ OUTPUT FORMAT (strict JSON, no markdown fences):
       "url": "Article URL"
     }
   ],
+  "pm_craft": [
+    {
+      "headline": "One-line headline capturing the idea",
+      "explanation": "2-3 sentences on what the article argues or teaches",
+      "why_it_matters": "Why this is worth a senior PM's attention — judged on the idea itself, not on mortgage relevance",
+      "source": "Source name",
+      "url": "Article URL"
+    }
+  ],
   "worth_reading": [
     {
       "title": "Article title",
@@ -176,11 +203,11 @@ OUTPUT FORMAT (strict JSON, no markdown fences):
 RULES:
 - top_insights: Exactly 3 (or fewer if truly nothing qualifies). Quality over quantity.
 - competitive_signals: 0-3. Only include if a specific competitor is mentioned. Empty array is fine.
-- worth_reading: 3-5 links. Always include at least 1 product management article (from SVPG, Teresa Torres, Lenny's Newsletter, Ethan Mollick, or similar PM/AI sources) unless none of the available PM content is genuinely insightful. Aim for a mix of PM and mortgage/competitive articles. PM content is always valuable here even without a mortgage connection. YouTube videos can go here too.
+- pm_craft: 0-3. Empty array is fine if no PM content meets the bar today. Do NOT lower the bar to fill the section.
+- worth_reading: 3-5 links. Mix mortgage and PM as the day's content allows. YouTube videos can go here.
 - If genuinely nothing is notable today, set nothing_notable: true and leave arrays empty.
 - Never fabricate URLs — only use URLs from the articles provided.
 - Do not generate insights from YouTube video titles alone.
-
 Return ONLY the JSON object, no other text.`;
 
   const MODELS = ['claude-sonnet-4-6', 'claude-sonnet-4-5'];
@@ -239,6 +266,7 @@ Return ONLY the JSON object, no other text.`;
         date: new Date().toISOString().split('T')[0],
         top_insights: [],
         competitive_signals: [],
+        pm_craft: [],
         worth_reading: [],
         nothing_notable: true,
         error: `Failed to parse Claude response: ${parseError.message}`,
@@ -253,6 +281,7 @@ Return ONLY the JSON object, no other text.`;
     digest.source_count = sourceCount;
     digest.top_insights = digest.top_insights || [];
     digest.competitive_signals = digest.competitive_signals || [];
+    digest.pm_craft = digest.pm_craft || [];
     digest.worth_reading = digest.worth_reading || [];
     digest.nothing_notable = digest.nothing_notable || false;
 
@@ -275,8 +304,13 @@ Return ONLY the JSON object, no other text.`;
       return shared >= 2 && shared / Math.min(wordsA.size, wordsB.size) >= 0.4;
     }
 
-    // Collect fingerprints from top_insights
+    // Collect fingerprints from top_insights and pm_craft (highest priority sections)
     for (const item of digest.top_insights) {
+      if (item.url) usedUrls.add(item.url);
+      const fp = fingerprint(item.headline || item.explanation || '');
+      if (fp) usedFingerprints.add(fp);
+    }
+    for (const item of digest.pm_craft) {
       if (item.url) usedUrls.add(item.url);
       const fp = fingerprint(item.headline || item.explanation || '');
       if (fp) usedFingerprints.add(fp);
@@ -316,7 +350,7 @@ Return ONLY the JSON object, no other text.`;
       console.log(`[Insights] Dedup removed ${removed} duplicate(s) from lower-priority sections`);
     }
 
-    console.log(`[Insights] Generated: ${digest.top_insights.length} insights, ${digest.competitive_signals.length} signals, ${digest.worth_reading.length} links`);
+    console.log(`[Insights] Generated: ${digest.top_insights.length} insights, ${digest.pm_craft.length} pm_craft, ${digest.competitive_signals.length} signals, ${digest.worth_reading.length} links`);
     return digest;
 
   } catch (error) {
@@ -327,6 +361,7 @@ Return ONLY the JSON object, no other text.`;
       date: new Date().toISOString().split('T')[0],
       top_insights: [],
       competitive_signals: [],
+      pm_craft: [],
       worth_reading: [],
       nothing_notable: true,
       error: `Claude API failed after 2 attempts: ${error.message}`,
