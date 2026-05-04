@@ -46,6 +46,7 @@ export async function runDailyDigest(options = {}) {
         date: new Date().toISOString().split('T')[0],
         top_insights: [],
         competitive_signals: [],
+        pm_craft: [],
         worth_reading: [],
         nothing_notable: true,
         article_count: 0,
@@ -64,26 +65,28 @@ export async function runDailyDigest(options = {}) {
       // Cheap dry-run: exclusion report without Claude API call
       const excludedInsights = getRecentlyFeaturedUrls('top_insight', 7);
       const excludedSignals = getRecentlyFeaturedUrls('competitive_signal', 7);
+      const excludedPmCraft = getRecentlyFeaturedUrls('pm_craft', 14);
       const excludedWR = getRecentlyFeaturedUrls('worth_reading', 30);
 
       const contentArticles = articles.filter(a => a.type !== 'youtube' || a.originalContent);
-      const excludedSet = new Set(excludedInsights);
-      const candidates = contentArticles.filter(a => !excludedSet.has(a.link));
+      const allExcluded = new Set([...excludedInsights, ...excludedSignals, ...excludedPmCraft, ...excludedWR]);
+      const candidates = contentArticles.filter(a => !allExcluded.has(a.link));
 
       console.log('\n[DRY RUN] Exclusion report (Claude API skipped):');
       console.log(`  Total articles: ${articles.length}`);
       console.log(`  Content articles: ${contentArticles.length}`);
       console.log(`  Excluded top_insight URLs (7d): ${excludedInsights.length}`);
       console.log(`  Excluded competitive_signal URLs (7d): ${excludedSignals.length}`);
+      console.log(`  Excluded pm_craft URLs (14d): ${excludedPmCraft.length}`);
       console.log(`  Excluded worth_reading URLs (30d): ${excludedWR.length}`);
-      console.log(`  Non-excluded candidates for top_insight: ${candidates.length}`);
+      console.log(`  Non-excluded candidates: ${candidates.length}`);
 
       if (candidates.length < SLOW_DAY_THRESHOLD) {
         console.log(`  → SLOW DAY would trigger (threshold: ${SLOW_DAY_THRESHOLD})`);
       }
 
       if (candidates.length > 0) {
-        console.log('\n  Candidate articles (not excluded from top_insight):');
+        console.log('\n  Candidate articles (not excluded):');
         for (const a of candidates.slice(0, 20)) {
           console.log(`    - ${a.title} (${a.source})`);
           console.log(`      ${a.link}`);
@@ -96,6 +99,7 @@ export async function runDailyDigest(options = {}) {
         date: new Date().toISOString().split('T')[0],
         top_insights: [],
         competitive_signals: [],
+        pm_craft: [],
         worth_reading: [],
         nothing_notable: candidates.length < SLOW_DAY_THRESHOLD,
         slow_day: candidates.length < SLOW_DAY_THRESHOLD,
@@ -114,6 +118,13 @@ export async function runDailyDigest(options = {}) {
       if (match) {
         insight.article_id = match.id;
         insight.has_full_content = match.hasFullContent || false;
+      }
+    }
+    for (const item of (digest.pm_craft || [])) {
+      const match = articlesByUrl.get(item.url);
+      if (match) {
+        item.article_id = match.id;
+        item.has_full_content = match.hasFullContent || false;
       }
     }
     for (const item of (digest.worth_reading || [])) {
@@ -149,6 +160,7 @@ export async function runDailyDigest(options = {}) {
       console.log(`  Subject: ${subject}`);
       console.log(`  Insights: ${digest.top_insights?.length || 0}`);
       console.log(`  Signals: ${digest.competitive_signals?.length || 0}`);
+      console.log(`  PM Craft: ${digest.pm_craft?.length || 0}`);
       console.log(`  Worth reading: ${digest.worth_reading?.length || 0}`);
       if (digest.slow_day) console.log('  Body: Nothing material today. See you tomorrow.');
       emailResult = { status: 'dry_run' };
@@ -162,6 +174,7 @@ export async function runDailyDigest(options = {}) {
       const writeBackItems = [
         ...(digest.top_insights || []).map(i => ({ url: i.url, title: i.headline, section: 'top_insight' })),
         ...(digest.competitive_signals || []).map(s => ({ url: s.url, title: s.signal, section: 'competitive_signal' })),
+        ...(digest.pm_craft || []).map(p => ({ url: p.url, title: p.headline, section: 'pm_craft' })),
         ...(digest.worth_reading || []).map(w => ({ url: w.url, title: w.title, section: 'worth_reading' })),
       ].filter(item => item.url);
 
@@ -173,6 +186,7 @@ export async function runDailyDigest(options = {}) {
       const wouldWrite = [
         ...(digest.top_insights || []).map(i => i.url),
         ...(digest.competitive_signals || []).map(s => s.url),
+        ...(digest.pm_craft || []).map(p => p.url),
         ...(digest.worth_reading || []).map(w => w.url),
       ].filter(Boolean);
       if (wouldWrite.length > 0) {
@@ -193,7 +207,7 @@ export async function runDailyDigest(options = {}) {
     digestState.lastError = null;
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`[Signal] Complete in ${elapsed}s — ${articles.length} articles, ${digest.top_insights?.length || 0} insights, email: ${emailResult.status}`);
+    console.log(`[Signal] Complete in ${elapsed}s — ${articles.length} articles, ${digest.top_insights?.length || 0} insights, ${digest.pm_craft?.length || 0} pm_craft, email: ${emailResult.status}`);
 
   } catch (error) {
     digestState.lastError = error.message;
