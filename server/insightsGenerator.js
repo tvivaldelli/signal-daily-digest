@@ -387,7 +387,8 @@ export async function generateWeeklySummary(recentDigests) {
   const digestSummary = recentDigests.map(d => {
     const insights = (d.top_insights || []).map(i => `- ${i.headline}: ${i.explanation}`).join('\n');
     const signals = (d.competitive_signals || []).map(s => `- ${s.competitor}: ${s.signal}`).join('\n');
-    return `### ${d.date}\nInsights:\n${insights}\nSignals:\n${signals}`;
+    const pmCraft = (d.pm_craft || []).map(p => `- ${p.headline}: ${p.explanation}`).join('\n');
+    return `### ${d.date}\nInsights:\n${insights}\nSignals:\n${signals}\nPM Craft:\n${pmCraft}`;
   }).join('\n\n');
 
   const prompt = `You are a weekly intelligence summarizer for a digital product leader in financial services.
@@ -400,6 +401,7 @@ Write 3-5 bullet points summarizing the most important patterns, trends, and act
 1. Recurring themes across multiple days
 2. The single most important competitive development
 3. What should be discussed in the next product team meeting
+4. If PM Craft items show recurring themes (e.g., AI tooling patterns, decision-making frameworks), surface those as well
 
 Return ONLY a JSON array of strings (each string is one bullet point). No other text.
 Example: ["Bullet one here", "Bullet two here", "Bullet three here"]`;
