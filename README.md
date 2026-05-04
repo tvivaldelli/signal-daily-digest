@@ -1,129 +1,142 @@
 # Signal
 
-AI-powered daily email digest that aggregates RSS feeds and web sources, generates insights using Claude, and delivers a curated briefing every morning.
+A daily AI-curated intelligence digest, delivered by email.
 
-No web frontend — just a pipeline triggered by an external cron service that fetches, analyzes, and emails.
+## What is this
 
-## How It Works
+Signal is a headless pipeline that aggregates RSS feeds, runs them through Claude for analysis, and emails a structured daily briefing. I built it to track two things at once -- mortgage industry moves and product management thinking -- without spending an hour a day on it.
 
-```
-External cron (e.g. cron-job.org)
-  → GET /run-digest?token=SECRET
-    → Fetch RSS feeds + scrape newsrooms
-    → Store articles in PostgreSQL
-    → Query last 24 hours
-    → Generate insights via Claude API
-    → Send email via Resend
-    → Append digest to JSONL archive
-```
+About 1,500 lines of Node.js, a SQLite database, and a single Claude API call per day.
 
-The server runs on Replit Autoscale (scales to zero when idle). The `/run-digest` endpoint responds immediately and runs the pipeline in the background, keeping the HTTP connection open to prevent the container from being killed mid-pipeline.
+![Sample digest email](docs/sample-digest.png)
 
-On Fridays, a weekly summary is generated from the last 5 digests and included in the email.
-
-## Project Structure
+## How it works
 
 ```
-/
-├── server/
-│   ├── index.js              # Express server — /health, /run-digest, /read/:id
-│   ├── scheduler.js          # Cron scheduling + pipeline orchestration
-│   ├── rssFetcher.js         # RSS parsing, YouTube enrichment, concurrency limiter
-│   ├── newsroomScraper.js    # Cheerio-based HTML scrapers for newsroom pages
-│   ├── insightsGenerator.js  # Claude API prompt + response parsing
-│   ├── emailSender.js        # Resend SDK + HTML email template
-│   ├── archiver.js           # JSONL append/read for digest history
-│   ├── db.js                 # PostgreSQL connection pool + article CRUD
-│   ├── sources.json          # RSS feed configuration
-│   ├── migrate-archive.js    # One-time legacy migration script
-│   ├── .env.example          # Environment variable template
-│   ├── package.json          # Server dependencies
-│   └── data/
-│       └── signal-archive.jsonl  # Append-only digest archive
-├── package.json              # Root scripts (start, migrate)
-└── README.md
+  15 RSS feeds + 7 newsroom scrapers
+          |
+          v
+    SQLite (articles table)
+          |
+          v
+    Dedup filter (featured_articles table)
+          |
+          v
+    Claude API (single structured prompt)
+          |
+          v
+    HTML email via Resend
+          |
+          v
+    JSONL archive (append-only)
 ```
 
-## Endpoints
+Every morning at 6:30 AM ET:
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/health` | Returns pipeline state: last run time, article count, email status, next scheduled run, last error |
-| `GET` | `/run-digest?token=` | Token-protected trigger for the daily pipeline. Called by external cron service |
-| `GET` | `/read/:id` | Renders full article content in a clean reader page. Used for articles where the RSS feed provides full text |
+1. **Fetch** -- Parse RSS feeds and scrape competitor newsroom pages.
+2. **Store** -- Upsert articles into SQLite. Deduplicate on URL.
+3. **Filter** -- Remove articles that appeared in recent digests (7-day window for insights, 14-day for PM content, 30-day for links).
+4. **Analyze** -- One Claude API call produces a structured JSON digest with four sections.
+5. **Email** -- Render HTML and send via Resend.
+6. **Archive** -- Append the full digest JSON to a local JSONL file.
 
-## Data Sources
+On Fridays, the pipeline also generates a weekly summary from the last 5 daily digests.
 
-Sources are configured in two places:
+If too few articles survive the dedup filter, Signal sends a short "nothing material today" email instead of forcing weak content through Claude.
 
-### RSS Feeds — `server/sources.json`
+## Why I built it
 
-```json
-{
-  "sources": [
-    {
-      "name": "Display Name",
-      "category": "industry",
-      "url": "https://example.com/",
-      "rss": "https://example.com/feed/"
-    }
-  ]
-}
-```
+I was spending 30-45 minutes every morning scanning mortgage industry news, competitor press releases, and product management blogs. Most days, 90% of it was noise. I wanted a system that would read everything, surface what matters, and let me start the day with a 2-minute email instead of a 30-minute tab-sprawl.
 
-Each source needs a `name`, `category`, `url` (homepage), and `rss` (feed URL). Categories are arbitrary strings used to group articles in the Claude prompt.
+Signal is what that system turned into.
 
-YouTube channel feeds are also supported — use URLs like `https://www.youtube.com/feeds/videos.xml?channel_id=CHANNEL_ID`. The pipeline auto-detects YouTube feeds, fetches video descriptions, and tags them as `type: "youtube"`.
+## Sections in the daily email
 
-### HTML Scrapers — `server/newsroomScraper.js`
+Each digest has up to four sections, plus a weekly summary on Fridays:
 
-For sites without RSS feeds, custom Cheerio scrapers extract press releases and news items from HTML pages. Each scraper is a function that receives a Cheerio `$` instance and returns an array of `{ title, link, pubDate }` objects.
+**Top Insights** -- The 3 most important mortgage industry developments. Each includes a headline, explanation, and connection to digital mortgage product strategy. This section only includes content that directly affects mortgage servicing, origination, or the competitive landscape.
 
-To add a new scraper, create a parser function and register it in `scrapeAllNewsrooms()`.
+**Competitive Signals** -- 0-3 specific moves by named competitors (Rocket Mortgage, UWM, loanDepot, PennyMac, fintechs). Empty array is fine -- not every day has competitor news.
 
-## Setup
+**Product Craft** -- 0-3 product management articles evaluated purely on PM merit: frameworks, case studies, AI-assisted workflows, leadership thinking. These are judged on the strength of the idea, not on mortgage relevance. The prompt explicitly prevents mortgage articles from being contorted into this section or vice versa.
+
+**Worth Reading** -- 3-5 links that didn't make a top section but are worth 5 minutes. A mix of mortgage and PM content as the day allows.
+
+**Weekly Summary** (Fridays) -- 3-5 bullets synthesizing patterns and action items from the week's digests.
+
+## Architecture
+
+- **Runtime** -- Node.js + Express, single process, port 3001
+- **Database** -- SQLite via better-sqlite3. Two tables: `articles` (content storage, 90-day retention) and `featured_articles` (cross-digest dedup tracking)
+- **AI** -- Anthropic Claude API (claude-sonnet-4-6 with fallback to claude-sonnet-4-5). One call per digest, ~8K max tokens, temperature 0.25
+- **Email** -- Resend (free tier)
+- **Sources** -- 15 RSS feeds across 3 categories, plus 7 Cheerio-based HTML scrapers for competitor newsrooms without RSS
+- **Archive** -- Append-only JSONL on local disk
+- **Deployment** -- systemd user service on a Linux VPS. `node-cron` handles scheduling internally; no external cron dependency
+
+### Source mix
+
+| Category | Sources | What it covers |
+|----------|---------|----------------|
+| Mortgage industry | 4 feeds | Industry news, regulation, market analysis |
+| Product management | 7 feeds | PM craft, AI/workflow thinking, leadership |
+| Competitor intel | 4 feeds + 7 scrapers | Press releases and news from specific competitors |
+
+### Cross-digest dedup
+
+The `featured_articles` table prevents the same article from appearing in consecutive digests. Each section has its own exclusion window:
+
+| Section | Window | Rationale |
+|---------|--------|-----------|
+| Top insights | 7 days | Mortgage news cycles are fast |
+| Competitive signals | 7 days | Same |
+| Product craft | 14 days | PM sources publish less frequently |
+| Worth reading | 30 days | Catch-all; longer window prevents repeats |
+
+Articles excluded by the dedup filter are removed before Claude sees them, so the AI never has to decide whether to re-feature something.
+
+## Tech stack
+
+| Package | Purpose |
+|---------|---------|
+| `express` | HTTP server |
+| `better-sqlite3` | SQLite database |
+| `@anthropic-ai/sdk` | Claude API |
+| `resend` | Email delivery |
+| `rss-parser` | RSS feed parsing |
+| `cheerio` | HTML scraping for newsrooms |
+| `sanitize-html` | HTML sanitization for reader endpoint |
+| `html-entities` | Decode HTML entities in feed titles |
+| `node-cron` | Internal scheduling |
+| `dotenv` | Environment variable loading |
+
+## Running it yourself
 
 ### Prerequisites
 
 - Node.js 18+
-- PostgreSQL database
-- [Anthropic API key](https://console.anthropic.com/)
-- [Resend API key](https://resend.com/)
+- An [Anthropic API key](https://console.anthropic.com/)
+- A [Resend API key](https://resend.com/)
 
-### Install
+### Setup
 
 ```bash
+git clone https://github.com/tvivaldelli/signal-daily-digest.git
+cd signal-daily-digest/server
 npm install
-cd server && npm install
+cp .env.example .env
+# Edit .env with your keys
 ```
 
-### Configure
+### Environment variables
 
-Copy the environment template and fill in your values:
-
-```bash
-cp server/.env.example server/.env
 ```
-
-Required environment variables:
-
-| Variable | Purpose |
-|----------|---------|
-| `DATABASE_URL` | PostgreSQL connection string |
-| `ANTHROPIC_API_KEY` | Claude API key |
-| `RESEND_API_KEY` | Resend email API key |
-| `DIGEST_EMAIL` | Recipient email address |
-| `CRON_SECRET` | Shared secret for authenticating `/run-digest` |
-
-Optional:
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `PORT` | `3001` | Server port |
-| `APP_URL` | `https://mortgage-intel-hub.replit.app` | Base URL for reader links in emails |
-| `RUN_ON_STARTUP` | `false` | If `true`, runs the digest immediately on server start |
-
-On Replit, use Secrets (lock icon) instead of a `.env` file.
+ANTHROPIC_API_KEY=     # Claude API key
+RESEND_API_KEY=        # Resend email API key
+DIGEST_EMAIL=          # Recipient email address
+CRON_SECRET=           # Shared secret for the /run-digest endpoint
+APP_URL=               # Base URL for article reader links in emails
+```
 
 ### Run
 
@@ -131,111 +144,35 @@ On Replit, use Secrets (lock icon) instead of a `.env` file.
 npm start
 ```
 
-Or with auto-reload during development:
-
-```bash
-cd server && npm run dev
-```
-
-### Trigger the Digest
-
-Manually (replace `YOUR_SECRET`):
+The server starts on port 3001. The internal scheduler runs the digest at 6:30 AM ET daily. To trigger manually:
 
 ```bash
 curl "http://localhost:3001/run-digest?token=YOUR_SECRET"
 ```
 
-For production, point an external cron service (e.g. [cron-job.org](https://cron-job.org)) at your deployed `/run-digest?token=` URL.
+For a dry run (exclusion report, no Claude call, no email):
 
-## Configuring the Claude Prompt
-
-The insight generation prompt lives in `server/insightsGenerator.js`. It defines:
-
-- **Persona context** — who the digest is for and what they care about
-- **Filtering criteria** — what makes an article worth highlighting vs. skipping
-- **Output structure** — `top_insights`, `competitive_signals`, `worth_reading` sections
-
-To adapt Signal for a different industry or audience, edit the system prompt in `generateInsights()` to reflect your domain, priorities, and competitors.
-
-### Output Schema
-
-The Claude response is parsed into:
-
-```json
-{
-  "date": "2026-02-22",
-  "top_insights": [
-    {
-      "headline": "...",
-      "explanation": "...",
-      "connection": "...",
-      "source": "...",
-      "url": "..."
-    }
-  ],
-  "competitive_signals": [
-    {
-      "competitor": "...",
-      "signal": "...",
-      "implication": "...",
-      "url": "..."
-    }
-  ],
-  "worth_reading": [
-    {
-      "title": "...",
-      "reason": "...",
-      "url": "..."
-    }
-  ],
-  "nothing_notable": false,
-  "article_count": 42,
-  "source_count": 12
-}
+```bash
+curl "http://localhost:3001/run-digest?token=YOUR_SECRET&dry_run=true"
 ```
 
-## Database
+### Adapting for a different domain
 
-PostgreSQL with a single `articles` table:
+The Claude prompt lives in `server/insightsGenerator.js`. It defines the audience context, filtering criteria, section structure, and rules. To repurpose Signal for a different industry, edit that prompt and swap out the RSS sources in `server/sources.json`.
 
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | `SERIAL` | Primary key |
-| `link` | `VARCHAR(2048)` | Unique constraint — deduplicates articles |
-| `title` | `TEXT` | |
-| `source` | `VARCHAR(255)` | Feed name from `sources.json` |
-| `category` | `VARCHAR(255)` | Grouping label |
-| `type` | `VARCHAR(50)` | `article` (default) or `youtube` |
-| `summary` | `TEXT` | First 300 characters of content |
-| `original_content` | `TEXT` | Full article text (HTML stripped) |
-| `image_url` | `TEXT` | Featured image |
-| `pub_date` | `TIMESTAMP` | Publication date |
-| `content_html` | `TEXT` | Sanitized HTML for the reader endpoint |
-| `has_full_content` | `BOOLEAN` | `true` when RSS provides full text |
-| `saved_at` | `TIMESTAMP` | |
-| `created_at` | `TIMESTAMP` | |
+## Limitations
 
-The table is auto-created on startup. Articles older than 90 days are cleaned up weekly (Sunday midnight ET).
-
-## Digest Archive
-
-Every digest is appended to `server/data/signal-archive.jsonl` — one JSON object per line, regardless of whether the email succeeds. This archive is used to generate Friday weekly summaries from the last 5 digests.
-
-## Dependencies
-
-| Package | Purpose |
-|---------|---------|
-| `express` | HTTP server |
-| `pg` | PostgreSQL client |
-| `@anthropic-ai/sdk` | Claude API |
-| `resend` | Email delivery |
-| `rss-parser` | RSS feed parsing |
-| `cheerio` | HTML scraping |
-| `sanitize-html` | HTML sanitization for reader |
-| `html-entities` | Decode HTML entities in titles |
-| `node-cron` | Internal scheduler (weekly cleanup) |
-| `dotenv` | Environment variable loading |
+- **Single-user.** No auth system, no multi-tenant support. Designed for one reader.
+- **RSS-only.** No paywalled sources, no API integrations beyond RSS and HTML scraping.
+- **Opinionated AI lens.** The prompt is biased toward a digital product perspective in mortgage. Your mileage will vary in other domains without prompt tuning.
+- **English-only sources.**
+- **No web UI.** Email is the only output surface.
+- **Local archive.** The JSONL digest history lives on disk. No cloud sync, no backup beyond what you set up yourself.
 
 ## License
 
-ISC
+[ISC](./LICENSE)
+
+## Author
+
+Built by [Tom Vivaldelli](https://github.com/tvivaldelli)
