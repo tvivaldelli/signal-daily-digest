@@ -93,6 +93,8 @@ test/
   dedup.test.js       — 13 tests covering exclusion windows, slow-day, write-back guards, pm_craft, VALID_SECTIONS
 ```
 
+**Two-package layout:** there are two `package.json` files — the root one is a thin wrapper (scripts: `start`, `test`, `dedup:*`) and `server/package.json` holds the runtime dependencies. On the VPS, `node_modules` lives under `server/` only. Scripts that require app modules must resolve against `server/node_modules`.
+
 ## Cross-Digest Dedup
 
 The `featured_articles` table prevents the same article from dominating consecutive digests. Key design points:
@@ -115,7 +117,7 @@ The `featured_articles` table prevents the same article from dominating consecut
 
 ## Backlog
 
-Priority order. Items 1-3 need attention in the next week; items 4-5 are low-priority edge cases.
+Priority order. Items 1-3 date from 2026-05-04; items 6-9 were surfaced incidentally during the 2026-07-11 date-corruption investigation — all of them ran silently, none is fixed yet.
 
 1. **SIGTERM handler in server/index.js** — Call `db.close()` on SIGTERM/SIGINT before process exit. Highest priority. The WAL journal may not flush properly when systemd stops the process, which could explain the empty `featured_articles` table observed before tonight's migration. Without a clean shutdown, SQLite WAL writes can be lost.
 
@@ -127,7 +129,13 @@ Priority order. Items 1-3 need attention in the next week; items 4-5 are low-pri
 
 5. **Upsert quirk in markArticleFeatured** — The `ON CONFLICT (url)` upsert bumps `last_featured_date` and `feature_count` but does not update the `section` field. If the same URL appears in `top_insight` one day and `worth_reading` the next, it keeps its original section. Edge case; low priority since cross-section URL reuse is rare and the dedup filter removes the URL from all sections anyway.
 
-6. **Dead sources (found 2026-07-11, parked)** — 5 of 8 competitor-intel sources contribute nothing: UWM Newsroom (HTTP 403, zero rows ever), Beeline Blog (HTTP 404, zero rows ever), MBA Newslink (feed returns HTTP 200 but zero `<item>` elements, zero rows ever), Rocket Companies Newsroom (HTTP 403, no new rows since 2026-05-28), ICE Mortgage Technology (re-upserts the same 2 stale rows each run, one dated 2025-05-19). All fail at the HTTP/feed layer, not in date parsing. `scrapeNewsroom` swallows every failure and returns `[]`, so none of this is visible in normal operation. Repairs deliberately deferred out of the 2026-07 date-corruption fix arc. Related latent bug: `newsroomScraper.js` calls `new Date(dateText).toISOString()` (Rocket/UWM/ICE parsers), which throws on unparseable dates and would silently kill the whole scraper — not currently firing.
+6. **Dead sources (found 2026-07-11, parked)** — 5 of 8 competitor-intel sources contribute nothing: UWM Newsroom (HTTP 403, zero rows ever), Beeline Blog (HTTP 404, zero rows ever), MBA Newslink (feed returns HTTP 200 but zero `<item>` elements, zero rows ever), Rocket Companies Newsroom (HTTP 403, no new rows since 2026-05-28), ICE Mortgage Technology (re-upserts the same 2 stale press releases each run — one dated 2025-05-19 — while logging "found 2 articles"). All fail at the HTTP/feed layer, not in date parsing. `scrapeNewsroom` swallows every failure and returns `[]`, so none of this is visible in normal operation. Repairs deliberately deferred out of the 2026-07 date-corruption fix arc. Related latent bug: `newsroomScraper.js` calls `new Date(dateText).toISOString()` (Rocket/UWM/ICE parsers), which throws on unparseable dates and would silently kill the whole scraper — not currently firing.
+
+7. **`npm test` is a loaded gun against prod** — the suite executes `DELETE FROM featured_articles` against the `homedir()`-resolved DB, which on the VPS is the production database. Never run `npm test` on the VPS. Fix is scoped into the guards arc: require an explicit env var (e.g. `SIGNAL_DB_PATH`) for the test DB path, assert at suite start that it does not resolve to the production path, fail hard if unset.
+
+8. **`server/data/signal-archive.jsonl` is tracked in git** — app-written state inside the repo means every deploy is a potential merge conflict against live data. It dirtied the VPS tree on the 2026-07-11 deploy and needed a stash/pop around the pull. Should be gitignored, with a decision on what to do with the committed history (the tracked copy is frozen at an old state anyway).
+
+9. **`/health` lies about its own schedule** — `nextScheduledRun` is computed with `setHours(6, 30)` in server local time (UTC on the VPS) and stringified as `2026-07-12T06:30:00.000Z`, but the cron actually fires at 6:30 AM ET = 10:30 UTC. Cosmetic, but the endpoint misreports the one fact it exists to report.
 
 ## Rules
 
