@@ -276,7 +276,8 @@ Return ONLY the JSON object, no other text.`;
     }
 
     // Ensure required fields
-    digest.date = digest.date || new Date().toISOString().split('T')[0];
+    // Date is always stamped server-side — the model's echoed date drifts to article content dates
+    digest.date = new Date().toISOString().split('T')[0];
     digest.article_count = articles.length;
     digest.source_count = sourceCount;
     digest.top_insights = digest.top_insights || [];
