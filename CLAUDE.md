@@ -127,6 +127,8 @@ Priority order. Items 1-3 need attention in the next week; items 4-5 are low-pri
 
 5. **Upsert quirk in markArticleFeatured** — The `ON CONFLICT (url)` upsert bumps `last_featured_date` and `feature_count` but does not update the `section` field. If the same URL appears in `top_insight` one day and `worth_reading` the next, it keeps its original section. Edge case; low priority since cross-section URL reuse is rare and the dedup filter removes the URL from all sections anyway.
 
+6. **Dead sources (found 2026-07-11, parked)** — 5 of 8 competitor-intel sources contribute nothing: UWM Newsroom (HTTP 403, zero rows ever), Beeline Blog (HTTP 404, zero rows ever), MBA Newslink (feed returns HTTP 200 but zero `<item>` elements, zero rows ever), Rocket Companies Newsroom (HTTP 403, no new rows since 2026-05-28), ICE Mortgage Technology (re-upserts the same 2 stale rows each run, one dated 2025-05-19). All fail at the HTTP/feed layer, not in date parsing. `scrapeNewsroom` swallows every failure and returns `[]`, so none of this is visible in normal operation. Repairs deliberately deferred out of the 2026-07 date-corruption fix arc. Related latent bug: `newsroomScraper.js` calls `new Date(dateText).toISOString()` (Rocket/UWM/ICE parsers), which throws on unparseable dates and would silently kill the whole scraper — not currently firing.
+
 ## Rules
 
 - **No web frontend.** This is a headless pipeline. The only UI is the email digest.
