@@ -2,6 +2,7 @@ import Parser from 'rss-parser';
 import { readFile } from 'fs/promises';
 import sanitizeHtml from 'sanitize-html';
 import { saveArticle } from './db.js';
+import { normalizePubDate } from './dateUtils.js';
 import { decode } from 'html-entities';
 import { scrapeRocketPressReleases, scrapeBlendNewsroom, scrapeICEMortgageTech, scrapeUWMNewsroom, scrapeBetterBlog, scrapeBeeline, scrapeTomo } from './newsroomScraper.js';
 
@@ -187,7 +188,7 @@ async function fetchRSS(source, maxRetries = 3) {
           const article = {
             title: decode(item.title || ''),
             link: item.link,
-            pubDate: item.pubDate || item.isoDate || new Date().toISOString(),
+            pubDate: normalizePubDate(item, source.name),
             source: source.name,
             category: source.category || '',
             type: isYouTube ? 'youtube' : 'article',

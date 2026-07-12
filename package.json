@@ -9,7 +9,7 @@
     "migrate": "cd server && node migrate-archive.js",
     "dedup:status": "node scripts/dedup-status.js",
     "dedup:reset": "node scripts/dedup-reset.js",
-    "test": "node --test test/dedup.test.js"
+    "test": "node --test test/dedup.test.js test/date-normalization.test.js"
   },
   "keywords": [],
   "author": "",
