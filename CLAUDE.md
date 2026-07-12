@@ -117,7 +117,7 @@ The `featured_articles` table prevents the same article from dominating consecut
 
 ## Backlog
 
-Priority order. Items 1-3 date from 2026-05-04; items 6-9 were surfaced incidentally during the 2026-07-11 date-corruption investigation — all of them ran silently, none is fixed yet.
+Priority order. Items 1-3 date from 2026-05-04; items 6-9 were surfaced incidentally during the 2026-07-11 date-corruption investigation — all of them ran silently, none is fixed yet. Item 10 was observed in the 2026-07-12 issue.
 
 1. **SIGTERM handler in server/index.js** — Call `db.close()` on SIGTERM/SIGINT before process exit. Highest priority. The WAL journal may not flush properly when systemd stops the process, which could explain the empty `featured_articles` table observed before tonight's migration. Without a clean shutdown, SQLite WAL writes can be lost.
 
@@ -136,6 +136,8 @@ Priority order. Items 1-3 date from 2026-05-04; items 6-9 were surfaced incident
 8. **`server/data/signal-archive.jsonl` is tracked in git** — app-written state inside the repo means every deploy is a potential merge conflict against live data. It dirtied the VPS tree on the 2026-07-11 deploy and needed a stash/pop around the pull. Should be gitignored, with a decision on what to do with the committed history (the tracked copy is frozen at an old state anyway).
 
 9. **`/health` lies about its own schedule** — `nextScheduledRun` is computed with `setHours(6, 30)` in server local time (UTC on the VPS) and stringified as `2026-07-12T06:30:00.000Z`, but the cron actually fires at 6:30 AM ET = 10:30 UTC. Cosmetic, but the endpoint misreports the one fact it exists to report.
+
+10. **Tailscale-internal reader URLs in digest links (found 2026-07-12, log-only)** — Every email section swaps the article's public URL for `${APP_URL}/read/${article_id}` whenever `has_full_content && article_id` (emailSender.js lines 114, 138, 161, 185). `APP_URL` is `http://100.99.202.60:3001` — a Tailscale IP unreachable off-tailnet, so those links dead-end on any device not on the tailnet. Observed 2026-07-12: 2 of 3 WORTH READING links were reader URLs. The archive JSONL stores the public URLs — the swap happens only at email-build time. Reader pages are a deliberate feature; the defect is that reachability of `APP_URL` was assumed, not checked. Not part of the date-corruption arc; do not fix without explicit instruction.
 
 ## Rules
 
