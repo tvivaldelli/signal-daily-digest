@@ -24,7 +24,7 @@ db.exec(`
     image_url TEXT,
     content_html TEXT,
     has_full_content INTEGER DEFAULT 0,
-    pub_date TEXT,
+    pub_date TEXT NOT NULL CHECK (pub_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9].[0-9][0-9][0-9]Z'),
     saved_at TEXT DEFAULT (datetime('now')),
     created_at TEXT DEFAULT (datetime('now'))
   );
