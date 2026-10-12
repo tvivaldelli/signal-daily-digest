@@ -56,7 +56,7 @@ Each digest has up to four sections, plus a weekly summary on Fridays:
 
 **Top Insights** -- The 3 most important mortgage industry developments. Each includes a headline, explanation, and connection to digital mortgage product strategy. This section only includes content that directly affects mortgage servicing, origination, or the competitive landscape.
 
-**Competitive Signals** -- 0-3 specific moves by named competitors (Rocket Mortgage, UWM, loanDepot, PennyMac, fintechs). Empty array is fine -- not every day has competitor news.
+**Competitive Signals** -- 0-3 specific moves by named major lenders. Empty array is fine -- not every day has competitor news.
 
 **Product Craft** -- 0-3 product management articles evaluated purely on PM merit: frameworks, case studies, AI-assisted workflows, leadership thinking. These are judged on the strength of the idea, not on mortgage relevance. The prompt explicitly prevents mortgage articles from being contorted into this section or vice versa.
 
