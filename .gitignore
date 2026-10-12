@@ -32,3 +32,4 @@ coverage/
 # Misc
 *.bak
 .cache/
+server/data/signal-archive.jsonl
