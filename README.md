@@ -1,5 +1,9 @@
 # Signal
 
+> **Status: Retired October 2026.** Signal ran daily from January to October 2026.
+> I built it for a specific role; when the role ended, so did the need. The code
+> stays up as a reference and still runs if you want to adapt it.
+
 A daily AI-curated intelligence digest, delivered by email.
 
 ## What is this
@@ -94,6 +98,38 @@ The `featured_articles` table prevents the same article from appearing in consec
 | Worth reading | 30 days | Catch-all; longer window prevents repeats |
 
 Articles excluded by the dedup filter are removed before Claude sees them, so the AI never has to decide whether to re-feature something.
+
+## Decisions
+
+Each of these was a trade-off, not an obvious choice.
+
+- **One model call a day, fixed JSON schema.** Cheaper and more predictable than
+  per-article calls. The cost: the model sees a batch, not each story in depth.
+- **Dedup before the model, not in the prompt.** Code decides what has already been
+  featured. Claude never has to. The cost: per-section exclusion windows to tune.
+- **"Nothing material today" over padding.** A thin day sends a two-line email.
+  The cost: some mornings the inbox looks empty. That was the point.
+- **Always-on server with internal scheduling.** The first host slept when idle and
+  missed the 6:30 run. A small VPS with `node-cron` fixed it. The cost: a server to
+  maintain and a monthly bill instead of a free tier.
+- **SQLite over Postgres.** One reader, one process, one file. The cost: no path to
+  multi-user without a migration.
+- **Scrapers for newsrooms without RSS.** Seven competitors publish only HTML. The
+  cost: a scraper breaks whenever the site changes its markup.
+
+## Outcome
+
+Replaced 30-45 minutes of morning scanning with a two-minute email for about nine
+months. One Sonnet call per day. Retired when the role it served ended.
+
+## What I'd do differently
+
+- Log cost per run from day one. I didn't, so I have no clean number for what each
+  digest cost to produce.
+- Treat scrapers as the maintenance burden they are. Each one is a dependency on a
+  site I don't control.
+- Build the dedup table first. It was the single highest-value piece and it shipped
+  three months in.
 
 ## Tech stack
 
